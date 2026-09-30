@@ -3,6 +3,31 @@ use serde::{Deserialize, Serialize};
 pub const FAVORITE_TAG: &str = "favorite";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Theme {
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "dark" => Some(Theme::Dark),
+            "light" => Some(Theme::Light),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RepeatMode {
     #[default]
     Off,
@@ -51,6 +76,8 @@ pub struct NowPlaying {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
+    pub theme: Theme,
+    pub transparent: bool,
     pub all_media: Vec<MediaInfo>,
     pub queue: Vec<i64>,
     pub mini_queue: Vec<i64>,
@@ -121,12 +148,33 @@ pub enum Command {
     ToggleFavorite {
         id: i64,
     },
+    SetTheme {
+        theme: Theme,
+    },
+    SetTransparency {
+        on: bool,
+    },
     Shutdown,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_theme_commands() {
+        let theme: Command = serde_json::from_str(r#"{"action":"set_theme","theme":"light"}"#)
+            .expect("parse set_theme");
+        assert!(matches!(
+            theme,
+            Command::SetTheme {
+                theme: Theme::Light
+            }
+        ));
+        let trans: Command = serde_json::from_str(r#"{"action":"set_transparency","on":true}"#)
+            .expect("parse set_transparency");
+        assert!(matches!(trans, Command::SetTransparency { on: true }));
+    }
 
     #[test]
     fn parses_mini_commands() {

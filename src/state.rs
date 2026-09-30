@@ -1,10 +1,14 @@
-use crate::proto::RepeatMode;
+use crate::proto::{RepeatMode, Theme};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LastState {
+    #[serde(default)]
+    pub theme: Theme,
+    #[serde(default)]
+    pub transparent: bool,
     pub volume: i32,
     pub repeat: RepeatMode,
     pub shuffle: bool,
@@ -17,6 +21,8 @@ pub struct LastState {
 impl Default for LastState {
     fn default() -> Self {
         Self {
+            theme: Theme::Dark,
+            transparent: false,
             volume: 70,
             repeat: RepeatMode::Off,
             shuffle: false,

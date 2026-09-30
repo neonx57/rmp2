@@ -31,7 +31,7 @@ Everything lives under `~/.config/rmp2`:
 - `library.sqlite3` - media library DB
 - `rmp.sock` - daemon IPC socket
 - `rmp.pid` - daemon pid file
-- `last-state.json` - persisted volume/repeat/shuffle/active tags
+- `last-state.json` - persisted volume/repeat/shuffle/active tags/theme
 - `rmp.log` - daemon log
 
 ## Module layout
@@ -67,6 +67,8 @@ Everything lives under `~/.config/rmp2`:
 - `/` search applies a regex over a precomposed lowercase searchable blob
   (title + artist + uri + tags).
 - `f` toggles the reserved `favorite` tag.
+- `f10` opens the settings dialog (colorscheme dark/light, transparency on/off);
+  choices live in daemon state and `last-state.json`, not config.toml.
 
 ## Testing
 

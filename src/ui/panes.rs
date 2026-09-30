@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use crate::proto::{MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo};
+use crate::ui::theme::{self, Palette};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::symbols;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
@@ -46,17 +47,17 @@ pub const ASCII_BORDER: symbols::border::Set = symbols::border::Set {
     horizontal_bottom: "-",
 };
 
-fn frame_block(title: &str, focused: bool) -> Block<'static> {
-    Block::default()
+fn frame_block(title: &str, focused: bool, p: Palette) -> Block<'static> {
+    let mut b = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
         .title(format!(" {title} "))
         .title_alignment(Alignment::Center)
-        .border_style(Style::default().fg(if focused {
-            Color::Cyan
-        } else {
-            Color::DarkGray
-        }))
+        .border_style(Style::default().fg(if focused { p.accent } else { p.muted }));
+    if let Some(bg) = p.pane_bg {
+        b = b.style(Style::default().bg(bg));
+    }
+    b
 }
 
 fn display_name(m: &MediaInfo) -> String {
@@ -98,6 +99,7 @@ pub fn filter_pane(
     tags: &[TagInfo],
     focused: bool,
     cursor: usize,
+    p: Palette,
 ) {
     let items: Vec<ListItem> = tags
         .iter()
@@ -113,7 +115,9 @@ pub fn filter_pane(
             ListItem::new(text).style(style)
         })
         .collect();
-    let list = List::new(items).block(frame_block(title, focused));
+    let list = List::new(items)
+        .style(Style::default().fg(p.text))
+        .block(frame_block(title, focused, p));
     frame.render_widget(list, area);
 }
 
@@ -128,6 +132,7 @@ pub fn queue_pane(
     focused: bool,
     cursor: usize,
     search: Option<&str>,
+    p: Palette,
 ) {
     let re = search
         .filter(|p| !p.trim().is_empty())
@@ -153,12 +158,14 @@ pub fn queue_pane(
                 style = style.add_modifier(Modifier::REVERSED);
             }
             if now_marks {
-                style = style.fg(Color::Green);
+                style = style.fg(p.now_playing);
             }
             ListItem::new(Line::from(spans)).style(style)
         })
         .collect();
-    let list = List::new(items).block(frame_block(title, focused));
+    let list = List::new(items)
+        .style(Style::default().fg(p.text))
+        .block(frame_block(title, focused, p));
     frame.render_widget(list, area);
 }
 
@@ -198,6 +205,7 @@ pub fn mini_pane(
     now: Option<&NowPlaying>,
     focused: bool,
     cursor: usize,
+    p: Palette,
 ) {
     let by_id: std::collections::HashMap<i64, &MediaInfo> =
         media.iter().map(|m| (m.id, m)).collect();
@@ -218,12 +226,14 @@ pub fn mini_pane(
                 style = style.add_modifier(Modifier::REVERSED);
             }
             if now_marks {
-                style = style.fg(Color::Green);
+                style = style.fg(p.now_playing);
             }
             ListItem::new(Line::from(spans)).style(style)
         })
         .collect();
-    let list = List::new(items).block(frame_block(title, focused));
+    let list = List::new(items)
+        .style(Style::default().fg(p.text))
+        .block(frame_block(title, focused, p));
     frame.render_widget(list, area);
 }
 
@@ -233,6 +243,7 @@ pub fn state_pane(
     area: Rect,
     selected: Option<&MediaInfo>,
     focused: bool,
+    p: Palette,
 ) {
     let mut lines = Vec::new();
     if let Some(m) = selected {
@@ -243,7 +254,7 @@ pub fn state_pane(
         let sep_w = area.width.saturating_sub(2) as usize;
         lines.push(Line::from(Span::styled(
             "-".repeat(sep_w),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(p.muted),
         )));
         lines.push(Line::from(format!("Type:      {}", m.kind)));
         if let Some(s) = &m.source {
@@ -258,7 +269,7 @@ pub fn state_pane(
         if !m.tags.is_empty() {
             lines.push(Line::from(Span::styled(
                 "-".repeat(sep_w),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(p.muted),
             )));
             for t in &m.tags {
                 lines.push(Line::from(format!("- {t}")));
@@ -268,11 +279,13 @@ pub fn state_pane(
         lines.push(Line::from("Nothing selected"));
     }
     let para = Paragraph::new(lines)
-        .block(frame_block(title, focused))
+        .style(Style::default().fg(p.text))
+        .block(frame_block(title, focused, p))
         .wrap(Wrap { trim: false });
     frame.render_widget(para, area);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn search_bar(
     frame: &mut Frame,
     area: Rect,
@@ -281,31 +294,25 @@ pub fn search_bar(
     count: usize,
     total: usize,
     invalid: bool,
+    p: Palette,
 ) {
     let mut spans: Vec<Span> = Vec::new();
     let prompt = Span::styled(
         "/",
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
     );
     spans.push(prompt);
     let cur = cursor.min(text.len());
     spans.push(Span::raw(text[..cur].to_string()));
     spans.push(Span::styled(
         " ",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::REVERSED),
+        Style::default().fg(p.warn).add_modifier(Modifier::REVERSED),
     ));
     spans.push(Span::raw(text[cur..].to_string()));
     let counter = if invalid {
-        Span::styled("0/0", Style::default().fg(Color::Red))
+        Span::styled("0/0", Style::default().fg(p.warn))
     } else {
-        Span::styled(
-            format!("{count}/{total}"),
-            Style::default().fg(Color::DarkGray),
-        )
+        Span::styled(format!("{count}/{total}"), Style::default().fg(p.muted))
     };
     let left_w: usize = spans.iter().map(|s| s.content.chars().count()).sum();
     let right_w = counter.content.chars().count();
@@ -327,13 +334,12 @@ pub fn status_bar(
     snap: &Snapshot,
     msg: Option<&str>,
 ) -> StatusBarHits {
+    let p = theme::palette(snap.theme);
     let mut left: Vec<Span> = Vec::new();
     if let Some(text) = msg {
         left.push(Span::styled(
             text,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(p.warn).add_modifier(Modifier::BOLD),
         ));
     } else if let Some(n) = &snap.now {
         let title = snap
@@ -352,12 +358,12 @@ pub fn status_bar(
         left.push(Span::raw(progress_bar(n.position, dur, w.min(20))));
         left.push(Span::styled(
             format!(" {title}"),
-            Style::default().fg(Color::Green),
+            Style::default().fg(p.now_playing),
         ));
     } else {
         left.push(Span::raw("stopped"));
     }
-    let lbl = Style::default().fg(Color::Yellow);
+    let lbl = Style::default().fg(p.warn);
     let mut right: Vec<Span> = Vec::new();
     right.push(Span::raw("  "));
     right.push(Span::styled("vol", lbl));

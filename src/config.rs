@@ -73,6 +73,7 @@ pub enum Action {
     MiniMoveDown,
     ConfirmQuit,
     Detach,
+    Settings,
 }
 
 pub const ACTIONS: &[(Action, &str)] = &[
@@ -103,6 +104,7 @@ pub const ACTIONS: &[(Action, &str)] = &[
     (Action::MiniMoveDown, "mini_move_down"),
     (Action::ConfirmQuit, "confirm_quit"),
     (Action::Detach, "detach"),
+    (Action::Settings, "settings"),
 ];
 
 pub fn action_from_str(name: &str) -> Option<Action> {
@@ -218,6 +220,7 @@ pub fn default_bindings() -> BTreeMap<String, Vec<String>> {
         ("seek_fwd", &["L", "right"][..]),
         ("confirm_quit", &["q", "esc"][..]),
         ("detach", &["Q"][..]),
+        ("settings", &["f10"][..]),
     ];
     pairs
         .iter()

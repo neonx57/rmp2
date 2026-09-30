@@ -1,14 +1,16 @@
 pub mod dialog;
 pub mod keymap;
 pub mod panes;
+pub mod theme;
 
 use crate::config::Config;
-use crate::proto::{Command, Snapshot};
-use crate::ui::dialog::{Dialog, DialogOutcome, FormCommand};
+use crate::proto::{Command, Snapshot, Theme};
+use crate::ui::dialog::{Dialog, DialogOutcome, FormCommand, settings_dialog};
 use crate::ui::keymap::{Action, Keymap};
 use crate::ui::panes::{
     Section, filter_pane, mini_pane, queue_pane, search_bar, state_pane, status_bar,
 };
+use crate::ui::theme::{SettingsState, cursor_next, palette, settings_options};
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind, poll, read,
 };
@@ -88,6 +90,7 @@ pub struct App {
     mini_cursor: usize,
     search: Option<SearchBar>,
     dialog: Option<Dialog>,
+    settings: Option<SettingsState>,
     quit: bool,
     shutdown: bool,
     msg: Option<(String, Instant)>,
@@ -191,6 +194,7 @@ impl App {
             mini_cursor: 0,
             search: None,
             dialog: None,
+            settings: None,
             quit: false,
             shutdown: false,
             msg: None,
@@ -225,6 +229,29 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent) {
+        if let Some(st) = self.settings.as_mut() {
+            match key.code {
+                KeyCode::Esc => self.settings = None,
+                KeyCode::Up => st.move_cursor(-1),
+                KeyCode::Down => st.move_cursor(1),
+                KeyCode::Left | KeyCode::Right => {
+                    self.cycle_setting(if key.code == KeyCode::Left { -1 } else { 1 });
+                }
+                KeyCode::Enter => self.cycle_setting(1),
+                _ => {
+                    if let Some(action) = self.keymap.resolve(key) {
+                        match action {
+                            Action::MoveUp => st.move_cursor(-1),
+                            Action::MoveDown => st.move_cursor(1),
+                            Action::Activate | Action::Toggle => self.cycle_setting(1),
+                            Action::ConfirmQuit | Action::Detach => self.settings = None,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if let Some(dlg) = self.dialog.as_mut() {
             let known: Vec<String> = self
                 .snap
@@ -274,6 +301,9 @@ impl App {
             return;
         }
         match self.keymap.resolve(key) {
+            Some(Action::Settings) => {
+                self.settings = Some(SettingsState::new());
+            }
             Some(Action::ConfirmQuit) => self.dialog = Some(Dialog::ConfirmExit),
             Some(Action::Detach) => {
                 self.quit = true;
@@ -432,6 +462,35 @@ impl App {
         }
     }
 
+    fn cycle_setting(&mut self, delta: i64) {
+        let Some(st) = self.settings.as_ref() else {
+            return;
+        };
+        let Some(snap) = self.snap.as_ref() else {
+            return;
+        };
+        let options = settings_options();
+        let cursor = st.cursor;
+        match cursor {
+            0 => {
+                let cur = options[0]
+                    .1
+                    .iter()
+                    .position(|v| *v == snap.theme.name())
+                    .unwrap_or(0);
+                let next = cursor_next(delta, cur, options[0].1.len());
+                if let Some(t) = Theme::parse(options[0].1[next]) {
+                    self.connection.send(Command::SetTheme { theme: t });
+                }
+            }
+            1 => {
+                let next = delta > 0;
+                self.connection.send(Command::SetTransparency { on: next });
+            }
+            _ => {}
+        }
+    }
+
     fn apply_form(&mut self, cmd: FormCommand) {
         match cmd {
             FormCommand::Add { uri, title, tags } => {
@@ -547,6 +606,10 @@ impl App {
         let snap = self.snap.as_ref();
         match snap {
             Some(s) => {
+                let p = palette(s.theme);
+                if s.transparent {
+                    frame.render_widget(ratatui::widgets::Paragraph::new(""), main);
+                }
                 filter_pane(
                     frame,
                     &self.cfg.titles.filter,
@@ -554,6 +617,7 @@ impl App {
                     &s.tags,
                     self.section == Section::Filter,
                     self.tag_cursor,
+                    p,
                 );
                 mini_pane(
                     frame,
@@ -564,6 +628,7 @@ impl App {
                     s.now.as_ref(),
                     self.section == Section::Mini,
                     self.mini_cursor,
+                    p,
                 );
                 queue_pane(
                     frame,
@@ -575,6 +640,7 @@ impl App {
                     self.section == Section::Queue,
                     self.queue_cursor,
                     s.search.as_deref(),
+                    p,
                 );
                 state_pane(
                     frame,
@@ -582,6 +648,7 @@ impl App {
                     state,
                     s.selected.as_ref(),
                     self.section == Section::Info,
+                    p,
                 );
                 let msg = self
                     .msg
@@ -599,6 +666,7 @@ impl App {
                         s.queue.len(),
                         s.all_media.len(),
                         invalid,
+                        p,
                     );
                 } else {
                     let hits = status_bar(frame, status, s, msg);
@@ -613,6 +681,14 @@ impl App {
         if let Some(d) = &self.dialog {
             frame.render_widget(Clear, queue);
             dialog::form_dialog(frame, queue, d);
+        }
+        if let Some(st) = &self.settings {
+            let (name, trans) = match self.snap.as_ref() {
+                Some(s) => (s.theme.name(), s.transparent),
+                None => ("dark", false),
+            };
+            let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
+            settings_dialog(frame, queue, st.cursor, name, trans, p);
         }
     }
 }

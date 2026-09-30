@@ -32,6 +32,8 @@ define the play queue. Plays local files and online streams alike.
 - Background daemon: detach the TUI with `Shift+q` and playback keeps going;
   reattach by running `rmp` again.
 - Fully configurable keybindings and pane titles (see [CONFIG.md](CONFIG.md)).
+- Settings dialog (`f10`): dark/light colorscheme and transparency, persisted
+  across restarts.
 - Metadata pulled straight from mpv properties - no metadata crate.
 
 ## Getting Started
@@ -87,6 +89,7 @@ and Info (details). `Tab` / `h` / `l` move focus between them.
 | `H` / `L`     | Seek backward / forward                       |
 | `q` / `esc`   | Quit (with confirmation)                      |
 | `Shift+q`     | Detach; playback continues in the daemon      |
+| `f10`         | Settings: colorscheme (dark/light), transparency |
 
 The daemon is a separate headless process that owns playback, the library, and
 the queue. It starts automatically on first `rmp` launch and lives at

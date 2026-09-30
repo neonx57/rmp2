@@ -2,7 +2,7 @@ use crate::config::{Config, Paths};
 use crate::db::{Library, classify_uri};
 use crate::engine::{Lcg, filter_queue, mini_pick, next_index};
 use crate::mpv::{Mpv, MpvMsg, P_PAUSE, P_TIME_POS, live_info, probe_metadata};
-use crate::proto::{Command, NowPlaying, RepeatMode, Snapshot};
+use crate::proto::{Command, NowPlaying, RepeatMode, Snapshot, Theme};
 use crate::state::{self, LastState};
 use regex::Regex;
 use serde_json::Value;
@@ -38,6 +38,8 @@ pub struct Daemon {
     stop_flag: Arc<AtomicBool>,
     active_tags: Vec<String>,
     search: Option<String>,
+    theme: Theme,
+    transparent: bool,
     volume: i32,
     repeat: RepeatMode,
     shuffle: bool,
@@ -109,6 +111,8 @@ impl Daemon {
             stop_flag: stop_flag.clone(),
             active_tags: last.active_tags.iter().map(|s| s.to_lowercase()).collect(),
             search: None,
+            theme: last.theme,
+            transparent: last.transparent,
             volume: last.volume.clamp(0, 130),
             repeat: last.repeat,
             shuffle: last.shuffle,
@@ -597,6 +601,16 @@ impl Daemon {
                 }
                 self.push();
             }
+            Command::SetTheme { theme } => {
+                self.theme = theme;
+                self.persist();
+                self.push();
+            }
+            Command::SetTransparency { on } => {
+                self.transparent = on;
+                self.persist();
+                self.push();
+            }
             Command::Shutdown => {
                 self.stopping = true;
             }
@@ -689,6 +703,8 @@ impl Daemon {
             paused: self.paused,
         });
         Snapshot {
+            theme: self.theme,
+            transparent: self.transparent,
             all_media: all,
             queue,
             mini_queue: self.mini_queue.clone(),
@@ -722,6 +738,8 @@ impl Daemon {
 
     fn persist(&self) {
         let s = LastState {
+            theme: self.theme,
+            transparent: self.transparent,
             volume: self.volume,
             repeat: self.repeat,
             shuffle: self.shuffle,

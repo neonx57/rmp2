@@ -1,5 +1,6 @@
 use crate::proto::MediaInfo;
 use crate::ui::panes::ASCII_BORDER;
+use crate::ui::theme::{Palette, settings_options, value_style};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
@@ -270,6 +271,61 @@ impl Dialog {
             },
         }
     }
+}
+
+pub fn settings_dialog(
+    frame: &mut Frame,
+    area: Rect,
+    cursor: usize,
+    theme_name: &str,
+    transparent: bool,
+    p: Palette,
+) {
+    let rect = centered(area, 44, 8);
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDER)
+        .title(" Settings ")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(p.accent));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let current = [
+        theme_name.to_string(),
+        if transparent {
+            "on".into()
+        } else {
+            "off".into()
+        },
+    ];
+    let mut lines = Vec::new();
+    for (i, (name, _values)) in settings_options().into_iter().enumerate() {
+        let mark = if i == cursor { ">" } else { " " };
+        let label_style = if i == cursor {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {mark} {name:<12} : "), label_style),
+            Span::styled(current[i].clone(), value_style(&current[i])),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " left/right or enter: change | esc: close",
+        Style::default().fg(p.muted),
+    )));
+    frame.render_widget(
+        Paragraph::new(lines),
+        Rect {
+            y: inner.y + 1,
+            height: inner.height.saturating_sub(1),
+            ..inner
+        },
+    );
 }
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {

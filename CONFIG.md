@@ -12,7 +12,7 @@ database, the daemon socket and logs:
 | ------------------------------------------------ | ---------------------------------------- |
 | `~/.config/rmp2/config.toml`                     | this file                                |
 | `~/.config/rmp2/library.sqlite3`                 | media library database                   |
-| `~/.config/rmp2/last-state.json`                 | volume/repeat/shuffle/active tags        |
+| `~/.config/rmp2/last-state.json`                 | volume/repeat/shuffle/active tags/theme  |
 | `~/.config/rmp2/rmp.sock` / `rmp.pid` / `rmp.log` | daemon IPC, pid file, log               |
 
 `~/.config` follows `$XDG_CONFIG_HOME`. Set `RMP2_DIR` to an absolute path to
@@ -91,6 +91,7 @@ mini_move_up    = "ctrl+k"
 mini_move_down  = "ctrl+j"
 confirm_quit = ["q", "esc"]
 detach      = "Q"
+settings    = "f10"
 ```
 
 ## Top-level options
@@ -100,6 +101,20 @@ detach      = "Q"
 | `mpv_binary`   | string  | `"mpv"` | Executable used for audio playback             |
 | `volume_step`  | integer | `5`     | Volume change per `volume_up`/`volume_down`    |
 | `seek_step`    | float   | `5.0`   | Seek length in seconds per `seek_back`/`seek_fwd` |
+
+## Settings dialog
+
+Press `f10` (rebindable via the `settings` action) to open the settings
+dialog. It has two options:
+
+| Option         | Values       | Meaning                                              |
+| -------------- | ------------ | ---------------------------------------------------- |
+| `colorscheme`  | dark / light | `light` paints panes black-on-white; `dark` keeps the terminal default |
+| `transparency` | off / on     | `on` skips pane background painting so the terminal's own background shows through |
+
+Changes apply immediately, broadcast to every connected client, and are
+persisted in `last-state.json` so they survive daemon restarts. Navigate with
+`up`/`down`, change a value with `left`/`right` or `enter`, close with `esc`.
 
 ## `[titles]`
 
@@ -175,6 +190,7 @@ Named keys: `space`, `enter`, `esc`, `tab`, `backtab`, `up`, `down`, `left`,
 | `mini_move_down`  | Move the selected mini-queue item down                    |
 | `confirm_quit`    | Quit the app (with confirmation); stops the daemon        |
 | `detach`          | Detach the TUI; playback continues in the daemon          |
+| `settings`        | Open the settings dialog (colorscheme, transparency)      |
 
 ## Default keybindings
 
@@ -209,3 +225,4 @@ If a section is missing entirely from `config.toml`, these defaults apply:
 | `mini_move_down`   | `ctrl+j`                |
 | `confirm_quit`     | `q`, `esc`              |
 | `detach`           | `Q`                     |
+| `settings`         | `f10`                   |
