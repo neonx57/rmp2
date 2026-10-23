@@ -5,7 +5,9 @@ pub mod theme;
 
 use crate::config::Config;
 use crate::proto::{Command, Snapshot, Theme};
-use crate::ui::dialog::{Dialog, DialogOutcome, FormCommand, error_dialog, settings_dialog};
+use crate::ui::dialog::{
+    Dialog, DialogOutcome, FormCommand, error_dialog, help_dialog, settings_dialog,
+};
 use crate::ui::keymap::{Action, Keymap};
 use crate::ui::panes::{
     Section, filter_pane, mini_pane, queue_pane, scroll_offset, search_bar, state_pane, status_bar,
@@ -96,6 +98,7 @@ pub struct App {
     msg: Option<(String, Instant)>,
     loading_since: Option<Instant>,
     error_popup: Option<String>,
+    help_open: bool,
     queue_area: Rect,
     filter_area: Rect,
     mini_area: Rect,
@@ -202,6 +205,7 @@ impl App {
             msg: None,
             loading_since: None,
             error_popup: None,
+            help_open: false,
             queue_area: Rect::default(),
             filter_area: Rect::default(),
             mini_area: Rect::default(),
@@ -250,6 +254,13 @@ impl App {
             match key.code {
                 KeyCode::Esc | KeyCode::Enter => self.error_popup = None,
                 _ => {}
+            }
+            return;
+        }
+        if self.help_open {
+            let close = key.code == KeyCode::Esc || self.keymap.resolve(key) == Some(Action::Help);
+            if close {
+                self.help_open = false;
             }
             return;
         }
@@ -327,6 +338,9 @@ impl App {
         match self.keymap.resolve(key) {
             Some(Action::Settings) => {
                 self.settings = Some(SettingsState::new());
+            }
+            Some(Action::Help) => {
+                self.help_open = true;
             }
             Some(Action::ConfirmQuit) => self.dialog = Some(Dialog::ConfirmExit),
             Some(Action::Detach) => {
@@ -413,7 +427,7 @@ impl App {
     }
 
     fn on_mouse(&mut self, m: MouseEvent) {
-        if self.dialog.is_some() || self.search.is_some() {
+        if self.dialog.is_some() || self.search.is_some() || self.help_open {
             return;
         }
         let MouseEvent {
@@ -716,6 +730,10 @@ impl App {
         if let Some(err) = &self.error_popup {
             let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
             error_dialog(frame, queue, err, p);
+        }
+        if self.help_open {
+            let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
+            help_dialog(frame, main, &self.cfg.keybindings, p);
         }
     }
 }

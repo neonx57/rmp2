@@ -90,6 +90,7 @@ and Info (details). `Tab` / `h` / `l` move focus between them.
 | `q` / `esc`   | Quit (with confirmation)                      |
 | `Shift+q`     | Detach; playback continues in the daemon      |
 | `f10`         | Settings: colorscheme (dark/light), transparency |
+| `?`           | Help: show all keybindings grouped by category   |
 
 The daemon is a separate headless process that owns playback, the library, and
 the queue. It starts automatically on first `rmp` launch and lives at

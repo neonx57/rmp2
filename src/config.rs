@@ -74,6 +74,7 @@ pub enum Action {
     ConfirmQuit,
     Detach,
     Settings,
+    Help,
 }
 
 pub const ACTIONS: &[(Action, &str)] = &[
@@ -105,6 +106,7 @@ pub const ACTIONS: &[(Action, &str)] = &[
     (Action::ConfirmQuit, "confirm_quit"),
     (Action::Detach, "detach"),
     (Action::Settings, "settings"),
+    (Action::Help, "help"),
 ];
 
 pub fn action_from_str(name: &str) -> Option<Action> {
@@ -117,6 +119,40 @@ pub fn action_str(action: Action) -> &'static str {
         .find(|(a, _)| *a == action)
         .map(|(_, n)| *n)
         .unwrap_or("?")
+}
+
+pub fn action_group(action: Action) -> &'static str {
+    match action {
+        Action::MoveUp
+        | Action::MoveDown
+        | Action::PrevSection
+        | Action::NextSection
+        | Action::CycleFocus
+        | Action::CycleFocusBack
+        | Action::Activate => "Navigation",
+        Action::Toggle
+        | Action::NextTrack
+        | Action::PrevTrack
+        | Action::VolumeUp
+        | Action::VolumeDown
+        | Action::SeekBack
+        | Action::SeekFwd
+        | Action::Repeat
+        | Action::Shuffle => "Playback",
+        Action::AddMedia
+        | Action::EditMedia
+        | Action::Search
+        | Action::Favorite
+        | Action::Delete => "Library",
+        Action::AddMini | Action::FocusMini | Action::MiniMoveUp | Action::MiniMoveDown => {
+            "Mini Queue"
+        }
+        Action::ConfirmQuit | Action::Detach | Action::Settings | Action::Help => "App",
+    }
+}
+
+pub fn action_label(action: Action) -> String {
+    action_str(action).split('_').collect::<Vec<_>>().join(" ")
 }
 
 mod keybindings {
@@ -221,6 +257,7 @@ pub fn default_bindings() -> BTreeMap<String, Vec<String>> {
         ("confirm_quit", &["q", "esc"][..]),
         ("detach", &["Q"][..]),
         ("settings", &["f10"][..]),
+        ("help", &["?"][..]),
     ];
     pairs
         .iter()
@@ -528,6 +565,24 @@ mod tests {
             assert_eq!(action_str(*a), *name);
         }
         assert_eq!(action_from_str("nope"), None);
+    }
+
+    #[test]
+    fn every_action_has_a_group() {
+        let groups: Vec<&str> = ACTIONS.iter().map(|(a, _)| action_group(*a)).collect();
+        assert!(groups.iter().all(|g| !g.is_empty()));
+        assert_eq!(
+            action_group(Action::NextTrack),
+            action_group(Action::Repeat)
+        );
+        assert_ne!(action_group(Action::Search), action_group(Action::Detach));
+    }
+
+    #[test]
+    fn action_labels_are_humanized() {
+        assert_eq!(action_label(Action::NextTrack), "next track");
+        assert_eq!(action_label(Action::MiniMoveUp), "mini move up");
+        assert_eq!(action_label(Action::Settings), "settings");
     }
 
     #[test]

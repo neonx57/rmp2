@@ -7,6 +7,7 @@ use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use std::collections::BTreeMap;
 
 pub enum FormCommand {
     Add {
@@ -437,6 +438,66 @@ pub fn form_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog) {
             ..inner
         },
     );
+}
+
+pub fn help_dialog(
+    frame: &mut Frame,
+    area: Rect,
+    keys: &BTreeMap<String, Vec<String>>,
+    p: Palette,
+) {
+    let width = area.width.saturating_sub(4).clamp(40, 66);
+    let height = area.height.saturating_sub(4).clamp(6, 24);
+    let rect = centered(area, width, height);
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDER)
+        .title(" Help ")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(p.accent));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    let [left, right] =
+        Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(inner);
+    frame.render_widget(
+        Paragraph::new(help_column(&["Playback", "Navigation"], keys, p)),
+        left,
+    );
+    frame.render_widget(
+        Paragraph::new(help_column(&["Library", "Mini Queue", "App"], keys, p)),
+        right,
+    );
+}
+
+fn help_column(
+    groups: &[&str],
+    keys: &BTreeMap<String, Vec<String>>,
+    p: Palette,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+    for group in groups {
+        lines.push(Line::from(Span::styled(
+            format!(" {group}"),
+            Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
+        )));
+        for (action, name) in crate::config::ACTIONS {
+            if crate::config::action_group(*action) != *group {
+                continue;
+            }
+            if keys.get(*name).is_none() {
+                continue;
+            }
+            let bound = keys.get(*name).map(|ks| ks.join("/")).unwrap_or_default();
+            let label = crate::config::action_label(*action);
+            lines.push(Line::from(format!("  {label:<18} {bound}")));
+        }
+        lines.push(Line::from(""));
+    }
+    while lines.last().is_some_and(|l: &Line| l.width() == 0) {
+        lines.pop();
+    }
+    lines
 }
 
 pub fn error_dialog(frame: &mut Frame, area: Rect, text: &str, p: Palette) {

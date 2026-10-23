@@ -92,6 +92,7 @@ mini_move_down  = "ctrl+j"
 confirm_quit = ["q", "esc"]
 detach      = "Q"
 settings    = "f10"
+help        = "?"
 ```
 
 ## Top-level options
@@ -191,6 +192,7 @@ Named keys: `space`, `enter`, `esc`, `tab`, `backtab`, `up`, `down`, `left`,
 | `confirm_quit`    | Quit the app (with confirmation); stops the daemon        |
 | `detach`          | Detach the TUI; playback continues in the daemon          |
 | `settings`        | Open the settings dialog (colorscheme, transparency)      |
+| `help`            | Open the keybindings help dialog                          |
 
 ## Default keybindings
 
@@ -226,3 +228,4 @@ If a section is missing entirely from `config.toml`, these defaults apply:
 | `confirm_quit`     | `q`, `esc`              |
 | `detach`           | `Q`                     |
 | `settings`         | `f10`                   |
+| `help`             | `?`                     |
