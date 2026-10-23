@@ -94,6 +94,7 @@ pub struct App {
     quit: bool,
     shutdown: bool,
     msg: Option<(String, Instant)>,
+    loading_since: Option<Instant>,
     queue_area: Rect,
     filter_area: Rect,
     mini_area: Rect,
@@ -198,6 +199,7 @@ impl App {
             quit: false,
             shutdown: false,
             msg: None,
+            loading_since: None,
             queue_area: Rect::default(),
             filter_area: Rect::default(),
             mini_area: Rect::default(),
@@ -215,6 +217,12 @@ impl App {
         };
         if let Some(n) = &snap.notify {
             self.msg = Some((n.clone(), Instant::now()));
+        }
+        let now_loading = snap.now.as_ref().is_some_and(|n| n.loading);
+        match (now_loading, self.loading_since) {
+            (true, None) => self.loading_since = Some(Instant::now()),
+            (false, Some(_)) => self.loading_since = None,
+            _ => {}
         }
         if let Some(sel) = snap.selected.clone()
             && let Some(i) = snap.queue.iter().position(|id| *id == sel.id)
@@ -650,6 +658,7 @@ impl App {
                     self.section == Section::Info,
                     p,
                 );
+                let anim = self.loading_since.map(|t| t.elapsed());
                 let msg = self
                     .msg
                     .as_ref()
@@ -669,7 +678,7 @@ impl App {
                         p,
                     );
                 } else {
-                    let hits = status_bar(frame, status, s, msg);
+                    let hits = status_bar(frame, status, s, msg, anim);
                     self.status_rep = hits.rep;
                     self.status_shf = hits.shf;
                 }
@@ -705,7 +714,15 @@ pub fn run(connection: Connection, cfg: Config) -> io::Result<()> {
             if app.pull() {
                 redraw = true;
             }
-            if poll(Duration::from_millis(100))? {
+            if app.loading_since.is_some() {
+                redraw = true;
+            }
+            let wait = if app.loading_since.is_some() {
+                Duration::from_millis(50)
+            } else {
+                Duration::from_millis(100)
+            };
+            if poll(wait)? {
                 match read()? {
                     Event::Key(k) => {
                         app.on_key(k);

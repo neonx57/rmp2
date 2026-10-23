@@ -36,6 +36,7 @@ impl Drop for Mpv {
 
 pub const P_PAUSE: u32 = 1;
 pub const P_TIME_POS: u32 = 2;
+pub const P_CACHE: u32 = 3;
 
 fn connect_retry(path: &Path, attempts: usize, delay: Duration) -> Result<UnixStream, String> {
     let mut last = "no attempt".to_string();

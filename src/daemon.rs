@@ -1,7 +1,7 @@
 use crate::config::{Config, Paths};
 use crate::db::{Library, classify_uri};
 use crate::engine::{Lcg, filter_queue, mini_pick, next_index};
-use crate::mpv::{Mpv, MpvMsg, P_PAUSE, P_TIME_POS, live_info, probe_metadata};
+use crate::mpv::{Mpv, MpvMsg, P_CACHE, P_PAUSE, P_TIME_POS, live_info, probe_metadata};
 use crate::proto::{Command, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme};
 use crate::state::{self, LastState};
 use regex::Regex;
@@ -55,6 +55,8 @@ pub struct Daemon {
     last_snap: Option<Snapshot>,
     position: f64,
     paused: bool,
+    loading: bool,
+    paused_for_cache: bool,
     notify: Option<String>,
     dirty: bool,
     last_push: Instant,
@@ -133,6 +135,8 @@ impl Daemon {
             last_snap: None,
             position: last.position,
             paused: !last.playing,
+            loading: false,
+            paused_for_cache: false,
             notify: None,
             dirty: false,
             last_push: Instant::now(),
@@ -188,10 +192,12 @@ impl Daemon {
         let _ = mpv.volume(self.volume);
         mpv.observe(P_PAUSE, "pause");
         mpv.observe(P_TIME_POS, "time-pos");
+        mpv.observe(P_CACHE, "paused-for-cache");
         if let Some(id) = self.now_id
             && let Some(m) = self.lib.media(id).ok().flatten()
         {
             let _ = mpv.loadfile(&m.uri);
+            self.loading = true;
             self.pending_resume = Some((id, self.position, !self.paused));
         }
         self.mpv = Some(mpv);
@@ -282,6 +288,12 @@ impl Daemon {
                             self.dirty = true;
                         }
                     }
+                    "paused-for-cache" => {
+                        if let Some(v) = got {
+                            self.paused_for_cache = v;
+                            self.dirty = true;
+                        }
+                    }
                     "end-file" => {
                         let reason = data
                             .as_ref()
@@ -340,6 +352,8 @@ impl Daemon {
             }
             let _ = self.lib.update_playback_stats(id, duration, bitrate);
         }
+        self.loading = false;
+        self.paused_for_cache = false;
         self.media_dirty = true;
         self.push();
     }
@@ -355,6 +369,7 @@ impl Daemon {
                 && let Some(mv) = self.mpv.as_mut()
             {
                 let _ = mv.loadfile(&m.uri);
+                self.loading = true;
             }
             return;
         }
@@ -418,6 +433,8 @@ impl Daemon {
                 self.eof_pending = false;
                 self.pending_resume = None;
                 self.playing_mini = !is_main;
+                self.loading = true;
+                self.paused_for_cache = false;
                 if is_main {
                     self.last_main_id = Some(id);
                 }
@@ -727,6 +744,7 @@ impl Daemon {
                 .find(|m| m.id == id)
                 .and_then(|m| m.duration),
             paused: self.paused,
+            loading: self.loading || self.paused_for_cache,
         });
         Snapshot {
             theme: self.theme,

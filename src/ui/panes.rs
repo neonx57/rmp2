@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use crate::proto::{MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo};
 use crate::ui::theme::{self, Palette};
@@ -89,6 +90,18 @@ fn progress_bar(pos: f64, dur: f64, width: usize) -> String {
     let filled = (pct * width as f64) as usize;
     let mut bar = "=".repeat(filled);
     bar.push_str(&"-".repeat(width.saturating_sub(filled)));
+    format!("[{bar}]")
+}
+
+fn loading_bar(elapsed: Duration, width: usize) -> String {
+    if width < 4 {
+        return format!("[{}]", "=".repeat(width));
+    }
+    let span = width - 2;
+    let step = (elapsed.as_millis() as usize / 40) % (2 * span);
+    let at = if step < span { step } else { 2 * span - step };
+    let mut bar = "-".repeat(width);
+    bar.replace_range(at..at + 2, "==");
     format!("[{bar}]")
 }
 
@@ -345,6 +358,7 @@ pub fn status_bar(
     area: Rect,
     snap: &Snapshot,
     msg: Option<&str>,
+    anim: Option<Duration>,
 ) -> StatusBarHits {
     let p = theme::palette(snap.theme);
     let mut left: Vec<Span> = Vec::new();
@@ -367,7 +381,11 @@ pub fn status_bar(
             fmt_time(dur)
         )));
         let w = area.width.saturating_sub(46) as usize;
-        left.push(Span::raw(progress_bar(n.position, dur, w.min(20))));
+        let bar = match anim {
+            Some(t) => loading_bar(t, w.min(20)),
+            None => progress_bar(n.position, dur, w.min(20)),
+        };
+        left.push(Span::raw(bar));
         left.push(Span::styled(
             format!(" {title}"),
             Style::default().fg(p.now_playing),
@@ -446,5 +464,22 @@ mod tests {
     #[test]
     fn scroll_offset_zero_height_is_zero() {
         assert_eq!(scroll_offset(20, 15, 0), 0);
+    }
+
+    #[test]
+    fn loading_bar_starts_left_and_reaches_right() {
+        assert_eq!(loading_bar(Duration::ZERO, 10), "[==--------]");
+        assert_eq!(loading_bar(Duration::from_millis(320), 10), "[--------==]");
+    }
+
+    #[test]
+    fn loading_bar_bounces_back_left() {
+        assert_eq!(loading_bar(Duration::from_millis(720), 10), "[--==------]");
+        assert_eq!(loading_bar(Duration::from_millis(640), 10), "[==--------]");
+    }
+
+    #[test]
+    fn loading_bar_tiny_width() {
+        assert_eq!(loading_bar(Duration::ZERO, 3), "[===]");
     }
 }

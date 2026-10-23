@@ -72,6 +72,7 @@ pub struct NowPlaying {
     pub position: f64,
     pub duration: Option<f64>,
     pub paused: bool,
+    pub loading: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
