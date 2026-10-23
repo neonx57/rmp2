@@ -1,6 +1,6 @@
 use crate::config::{Config, Paths};
 use crate::db::{Library, classify_uri};
-use crate::engine::{Lcg, filter_queue, mini_pick, next_index};
+use crate::engine::{Lcg, filter_queue, mini_pick, mpv_error_line, next_index};
 use crate::mpv::{Mpv, MpvMsg, P_CACHE, P_PAUSE, P_TIME_POS, live_info, probe_metadata};
 use crate::proto::{Command, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme};
 use crate::state::{self, LastState};
@@ -57,6 +57,7 @@ pub struct Daemon {
     paused: bool,
     loading: bool,
     paused_for_cache: bool,
+    error: Option<String>,
     notify: Option<String>,
     dirty: bool,
     last_push: Instant,
@@ -137,6 +138,7 @@ impl Daemon {
             paused: !last.playing,
             loading: false,
             paused_for_cache: false,
+            error: None,
             notify: None,
             dirty: false,
             last_push: Instant::now(),
@@ -190,6 +192,7 @@ impl Daemon {
         let ipc = self.paths.root.join("mpv.sock");
         let (mut mpv, rx) = Mpv::spawn(&self.cfg.mpv_binary, &ipc, false)?;
         let _ = mpv.volume(self.volume);
+        let _ = mpv.command(serde_json::json!(["request_log_messages", "warn"]));
         mpv.observe(P_PAUSE, "pause");
         mpv.observe(P_TIME_POS, "time-pos");
         mpv.observe(P_CACHE, "paused-for-cache");
@@ -302,6 +305,20 @@ impl Daemon {
                         if reason == Some("eof") && !self.eof_pending {
                             self.eof_pending = true;
                             self.track_ended();
+                        } else if reason == Some("error") {
+                            self.on_playback_error(data.as_ref());
+                        }
+                    }
+                    "log-message" => {
+                        let obj = data.unwrap_or(Value::Null);
+                        let prefix = obj.get("prefix").and_then(|v| v.as_str()).unwrap_or("mpv");
+                        let level = obj.get("level").and_then(|v| v.as_str()).unwrap_or("info");
+                        let text = obj.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                        let line = mpv_error_line(prefix, text);
+                        self.log(&format!("mpv[{level}] {line}"));
+                        if (level == "error" || level == "fatal") && self.error.is_none() {
+                            self.error = Some(line);
+                            self.push();
                         }
                     }
                     "file-loaded" => {
@@ -324,6 +341,24 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    fn on_playback_error(&mut self, data: Option<&Value>) {
+        let detail = data
+            .and_then(|v| v.get("file_error"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("failed to load media");
+        self.log(&format!("mpv end-file error: {detail}"));
+        if self.error.is_none() {
+            self.error = Some(detail.to_string());
+        }
+        self.now_id = None;
+        self.position = 0.0;
+        self.loading = false;
+        self.paused_for_cache = false;
+        self.pending_resume = None;
+        self.eof_pending = false;
+        self.push();
     }
 
     fn on_file_loaded(&mut self) {
@@ -760,6 +795,7 @@ impl Daemon {
             repeat: self.repeat,
             shuffle: self.shuffle,
             notify: self.notify.take(),
+            error: self.error.take(),
         }
     }
 

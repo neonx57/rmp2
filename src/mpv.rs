@@ -194,7 +194,13 @@ fn read_loop(reader: BufReader<UnixStream>, tx: Sender<MpvMsg>, pending: Pending
                 .unwrap_or(ev)
                 .to_string();
             let data = if let Some(r) = msg.get("reason").and_then(|v| v.as_str()) {
-                Some(json!({ "reason": r }))
+                Some(json!({ "reason": r, "file_error": msg.get("file_error") }))
+            } else if name == "log-message" {
+                Some(json!({
+                    "prefix": msg.get("prefix"),
+                    "level": msg.get("level"),
+                    "text": msg.get("text"),
+                }))
             } else {
                 msg.get("data").cloned().filter(|d| !d.is_null())
             };

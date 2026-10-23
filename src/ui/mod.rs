@@ -5,7 +5,7 @@ pub mod theme;
 
 use crate::config::Config;
 use crate::proto::{Command, Snapshot, Theme};
-use crate::ui::dialog::{Dialog, DialogOutcome, FormCommand, settings_dialog};
+use crate::ui::dialog::{Dialog, DialogOutcome, FormCommand, error_dialog, settings_dialog};
 use crate::ui::keymap::{Action, Keymap};
 use crate::ui::panes::{
     Section, filter_pane, mini_pane, queue_pane, scroll_offset, search_bar, state_pane, status_bar,
@@ -95,6 +95,7 @@ pub struct App {
     shutdown: bool,
     msg: Option<(String, Instant)>,
     loading_since: Option<Instant>,
+    error_popup: Option<String>,
     queue_area: Rect,
     filter_area: Rect,
     mini_area: Rect,
@@ -200,6 +201,7 @@ impl App {
             shutdown: false,
             msg: None,
             loading_since: None,
+            error_popup: None,
             queue_area: Rect::default(),
             filter_area: Rect::default(),
             mini_area: Rect::default(),
@@ -217,6 +219,11 @@ impl App {
         };
         if let Some(n) = &snap.notify {
             self.msg = Some((n.clone(), Instant::now()));
+        }
+        if let Some(err) = &snap.error
+            && self.error_popup.is_none()
+        {
+            self.error_popup = Some(err.clone());
         }
         let now_loading = snap.now.as_ref().is_some_and(|n| n.loading);
         match (now_loading, self.loading_since) {
@@ -239,6 +246,13 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent) {
+        if self.error_popup.is_some() {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.error_popup = None,
+                _ => {}
+            }
+            return;
+        }
         if let Some(st) = self.settings.as_mut() {
             match key.code {
                 KeyCode::Esc => self.settings = None,
@@ -698,6 +712,10 @@ impl App {
             };
             let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
             settings_dialog(frame, queue, st.cursor, name, trans, p);
+        }
+        if let Some(err) = &self.error_popup {
+            let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
+            error_dialog(frame, queue, err, p);
         }
     }
 }

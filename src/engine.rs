@@ -16,6 +16,15 @@ pub fn search_blob(m: &MediaInfo) -> String {
     parts.join(" ")
 }
 
+pub fn mpv_error_line(prefix: &str, text: &str) -> String {
+    let text = text.trim();
+    if text.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}: {text}")
+    }
+}
+
 pub fn mini_pick(mini: &mut Vec<i64>, finished: Option<i64>) -> Option<i64> {
     if let Some(f) = finished {
         mini.retain(|x| *x != f);
@@ -230,5 +239,14 @@ mod tests {
             next_index(&[], None, 1, false, RepeatMode::All, &mut |n| n),
             None
         );
+    }
+
+    #[test]
+    fn mpv_error_line_trims_and_formats() {
+        assert_eq!(
+            mpv_error_line("ytdl_hook", "  Subprocess failed: init \n"),
+            "ytdl_hook: Subprocess failed: init"
+        );
+        assert_eq!(mpv_error_line("ytdl_hook", " \n"), "ytdl_hook");
     }
 }

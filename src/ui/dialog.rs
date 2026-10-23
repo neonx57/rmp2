@@ -438,3 +438,27 @@ pub fn form_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog) {
         },
     );
 }
+
+pub fn error_dialog(frame: &mut Frame, area: Rect, text: &str, p: Palette) {
+    let rect = centered(area, 64, 8);
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDER)
+        .title(" Error ")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(p.warn));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    let mut lines: Vec<Line> = text
+        .lines()
+        .take(inner.height.saturating_sub(3) as usize)
+        .map(Line::from)
+        .collect();
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " enter/esc close",
+        Style::default().fg(p.muted),
+    )));
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}

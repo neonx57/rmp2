@@ -90,6 +90,7 @@ pub struct Snapshot {
     pub repeat: RepeatMode,
     pub shuffle: bool,
     pub notify: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
