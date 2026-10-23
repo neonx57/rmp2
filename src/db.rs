@@ -1,5 +1,6 @@
-use crate::proto::{FAVORITE_TAG, MediaInfo, TagInfo};
+use crate::proto::{FAVORITE_TAG, MediaInfo};
 use rusqlite::{Connection, OptionalExtension, params};
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -220,26 +221,48 @@ impl Library {
             "SELECT id, uri, kind, title, artist, duration, bitrate, source
              FROM media ORDER BY added_at DESC",
         )?;
-        let rows = stmt.query_map([], |r| self.row_to_media(r))?;
-        rows.collect()
+        let rows = stmt.query_map([], |r| {
+            Ok(MediaInfo {
+                id: r.get(0)?,
+                uri: r.get(1)?,
+                kind: r.get(2)?,
+                title: r.get(3)?,
+                artist: r.get(4)?,
+                duration: r.get(5)?,
+                bitrate: r.get(6)?,
+                source: r.get(7)?,
+                favorite: false,
+                tags: Vec::new(),
+            })
+        })?;
+        let mut out: Vec<MediaInfo> = rows.collect::<Result<_, _>>()?;
+        let mut tag_stmt = self.conn.prepare(
+            "SELECT mt.media_id, t.name FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+             ORDER BY mt.media_id, t.name",
+        )?;
+        let pairs =
+            tag_stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut by_id: HashMap<i64, Vec<String>> = HashMap::new();
+        for pair in pairs {
+            let (id, name) = pair?;
+            by_id.entry(id).or_default().push(name);
+        }
+        for m in &mut out {
+            if let Some(tags) = by_id.remove(&m.id) {
+                m.tags = tags;
+                m.favorite = m.tags.iter().any(|t| t == FAVORITE_TAG);
+            }
+        }
+        Ok(out)
     }
 
-    pub fn tags(&mut self, checked: &[String]) -> Result<Vec<TagInfo>, rusqlite::Error> {
+    pub fn tag_counts(&mut self) -> Result<Vec<(String, i64)>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
             "SELECT t.name, COUNT(mt.media_id) AS c FROM tags t
              LEFT JOIN media_tags mt ON mt.tag_id = t.id
              GROUP BY t.id ORDER BY c DESC, t.name",
         )?;
-        let rows = stmt.query_map([], |r| {
-            let name: String = r.get(0)?;
-            let count: i64 = r.get(1)?;
-            let checked = checked.contains(&name);
-            Ok(TagInfo {
-                name,
-                checked,
-                count,
-            })
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         rows.collect()
     }
 
@@ -346,8 +369,10 @@ mod tests {
 
         let all = lib.all_media().unwrap();
         assert_eq!(all.len(), 1);
-        let tags = lib.tags(&["jazz".into()]).unwrap();
-        assert!(tags.iter().any(|t| t.name == "jazz" && t.checked));
+        assert_eq!(all[0].tags, vec!["jazz".to_string()]);
+        let counts = lib.tag_counts().unwrap();
+        assert!(counts.contains(&("jazz".to_string(), 1)));
+        assert!(counts.contains(&("rock".to_string(), 0)));
 
         lib.delete_media(id).unwrap();
         assert!(lib.media(id).unwrap().is_none());

@@ -8,7 +8,7 @@ use crate::proto::{Command, Snapshot, Theme};
 use crate::ui::dialog::{Dialog, DialogOutcome, FormCommand, settings_dialog};
 use crate::ui::keymap::{Action, Keymap};
 use crate::ui::panes::{
-    Section, filter_pane, mini_pane, queue_pane, search_bar, state_pane, status_bar,
+    Section, filter_pane, mini_pane, queue_pane, scroll_offset, search_bar, state_pane, status_bar,
 };
 use crate::ui::theme::{SettingsState, cursor_next, palette, settings_options};
 use crossterm::event::{
@@ -44,12 +44,12 @@ impl Connection {
         let _ = self.cmd_tx.send(cmd);
     }
 
-    fn pull(&mut self) -> Option<Snapshot> {
-        let mut last = self.snap_rx.try_recv().ok();
+    pub fn pull(&self) -> Option<Snapshot> {
+        let mut latest = None;
         while let Ok(v) = self.snap_rx.try_recv() {
-            last = Some(v);
+            latest = Some(v);
         }
-        last.and_then(|v| serde_json::from_value(v).ok())
+        latest.and_then(|v| serde_json::from_value::<Snapshot>(v).ok())
     }
 }
 
@@ -209,23 +209,25 @@ impl App {
         }
     }
 
-    fn pull(&mut self) {
-        if let Some(snap) = self.connection.pull() {
-            if let Some(n) = &snap.notify {
-                self.msg = Some((n.clone(), Instant::now()));
-            }
-            if let Some(sel) = snap.selected.clone()
-                && let Some(i) = snap.queue.iter().position(|id| *id == sel.id)
-            {
-                self.queue_cursor = i;
-            }
-            self.queue_cursor = self.queue_cursor.min(snap.queue.len().saturating_sub(1));
-            self.tag_cursor = self.tag_cursor.min(snap.tags.len().saturating_sub(1));
-            self.mini_cursor = self
-                .mini_cursor
-                .min(snap.mini_queue.len().saturating_sub(1));
-            self.snap = Some(snap);
+    fn pull(&mut self) -> bool {
+        let Some(snap) = self.connection.pull() else {
+            return false;
+        };
+        if let Some(n) = &snap.notify {
+            self.msg = Some((n.clone(), Instant::now()));
         }
+        if let Some(sel) = snap.selected.clone()
+            && let Some(i) = snap.queue.iter().position(|id| *id == sel.id)
+        {
+            self.queue_cursor = i;
+        }
+        self.queue_cursor = self.queue_cursor.min(snap.queue.len().saturating_sub(1));
+        self.tag_cursor = self.tag_cursor.min(snap.tags.len().saturating_sub(1));
+        self.mini_cursor = self
+            .mini_cursor
+            .min(snap.mini_queue.len().saturating_sub(1));
+        self.snap = Some(snap);
+        true
     }
 
     fn on_key(&mut self, key: KeyEvent) {
@@ -408,14 +410,12 @@ impl App {
                 self.section = Section::Queue;
                 let rel = row.saturating_sub(self.queue_area.y + 1);
                 let len = self.snap.as_ref().map(|s| s.queue.len()).unwrap_or(0);
-                if usize::from(rel) < len {
-                    self.queue_cursor = usize::from(rel);
-                    if let Some(id) = self
-                        .snap
-                        .as_ref()
-                        .and_then(|s| s.queue.get(self.queue_cursor))
-                        .copied()
-                    {
+                let height = self.queue_area.height.saturating_sub(2) as usize;
+                let start = scroll_offset(len, self.queue_cursor, height);
+                let idx = start + usize::from(rel);
+                if usize::from(rel) < height && idx < len {
+                    self.queue_cursor = idx;
+                    if let Some(id) = self.snap.as_ref().and_then(|s| s.queue.get(idx)).copied() {
                         if double {
                             self.connection.send(Command::Play { id });
                         } else {
@@ -698,16 +698,35 @@ pub fn run(connection: Connection, cfg: Config) -> io::Result<()> {
     let res = (|| {
         crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
         let mut app = App::new(connection, cfg);
+        let start = Instant::now();
+        let mut last_tick: Option<u64> = None;
+        let mut redraw = true;
         while !app.quit {
-            app.pull();
-            terminal.draw(|f| app.render(f))?;
+            if app.pull() {
+                redraw = true;
+            }
             if poll(Duration::from_millis(100))? {
                 match read()? {
-                    Event::Key(k) => app.on_key(k),
-                    Event::Mouse(m) => app.on_mouse(m),
-                    Event::Resize(..) => {}
+                    Event::Key(k) => {
+                        app.on_key(k);
+                        redraw = true;
+                    }
+                    Event::Mouse(m) => {
+                        app.on_mouse(m);
+                        redraw = true;
+                    }
+                    Event::Resize(..) => redraw = true,
                     _ => {}
                 }
+            }
+            let tick = start.elapsed().as_secs();
+            if last_tick != Some(tick) {
+                last_tick = Some(tick);
+                redraw = true;
+            }
+            if redraw {
+                terminal.draw(|f| app.render(f))?;
+                redraw = false;
             }
         }
         if app.shutdown {

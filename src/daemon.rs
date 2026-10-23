@@ -2,7 +2,7 @@ use crate::config::{Config, Paths};
 use crate::db::{Library, classify_uri};
 use crate::engine::{Lcg, filter_queue, mini_pick, next_index};
 use crate::mpv::{Mpv, MpvMsg, P_PAUSE, P_TIME_POS, live_info, probe_metadata};
-use crate::proto::{Command, NowPlaying, RepeatMode, Snapshot, Theme};
+use crate::proto::{Command, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme};
 use crate::state::{self, LastState};
 use regex::Regex;
 use serde_json::Value;
@@ -33,11 +33,12 @@ pub struct Daemon {
     listener: UnixListener,
     events_tx: Sender<LoopEvent>,
     events_rx: Receiver<LoopEvent>,
-    clients: HashMap<u64, Sender<Value>>,
+    clients: HashMap<u64, Sender<String>>,
     next_client: u64,
     stop_flag: Arc<AtomicBool>,
     active_tags: Vec<String>,
     search: Option<String>,
+    search_re: Option<Regex>,
     theme: Theme,
     transparent: bool,
     volume: i32,
@@ -48,6 +49,10 @@ pub struct Daemon {
     last_main_id: Option<i64>,
     playing_mini: bool,
     mini_queue: Vec<i64>,
+    media_all: Vec<MediaInfo>,
+    tag_counts: Vec<(String, i64)>,
+    media_dirty: bool,
+    last_snap: Option<Snapshot>,
     position: f64,
     paused: bool,
     notify: Option<String>,
@@ -111,6 +116,7 @@ impl Daemon {
             stop_flag: stop_flag.clone(),
             active_tags: last.active_tags.iter().map(|s| s.to_lowercase()).collect(),
             search: None,
+            search_re: None,
             theme: last.theme,
             transparent: last.transparent,
             volume: last.volume.clamp(0, 130),
@@ -121,6 +127,10 @@ impl Daemon {
             last_main_id: last.media_id,
             playing_mini: false,
             mini_queue: Vec::new(),
+            media_all: Vec::new(),
+            tag_counts: Vec::new(),
+            media_dirty: true,
+            last_snap: None,
             position: last.position,
             paused: !last.playing,
             notify: None,
@@ -241,8 +251,8 @@ impl Daemon {
         let e = self.events_tx.clone();
         thread::spawn(move || client_reader(reader, id, e));
         thread::spawn(move || client_writer(stream, rx));
-        let snap = self.snapshot_value();
-        let _ = tx.send(snap);
+        let text = self.snapshot_text();
+        let _ = tx.send(text);
     }
 
     fn handle_event(&mut self, ev: LoopEvent) {
@@ -330,6 +340,7 @@ impl Daemon {
             }
             let _ = self.lib.update_playback_stats(id, duration, bitrate);
         }
+        self.media_dirty = true;
         self.push();
     }
 
@@ -442,17 +453,17 @@ impl Daemon {
         self.push();
     }
 
+    fn refresh_library(&mut self) {
+        self.media_all = self.lib.all_media().unwrap_or_default();
+        self.tag_counts = self.lib.tag_counts().unwrap_or_default();
+        self.media_dirty = false;
+    }
+
     fn queue_ids(&mut self) -> Vec<i64> {
-        let pat = self.search.clone();
-        let re = match pat.as_deref() {
-            Some(p) if !p.is_empty() => match Regex::new(p) {
-                Ok(r) => Some(r),
-                Err(_) => return Vec::new(),
-            },
-            _ => None,
-        };
-        let all = self.lib.all_media().unwrap_or_default();
-        filter_queue(&all, &self.active_tags, re.as_ref())
+        if self.media_dirty {
+            self.refresh_library();
+        }
+        filter_queue(&self.media_all, &self.active_tags, self.search_re.as_ref())
     }
 
     fn handle_command(&mut self, cmd: Command) {
@@ -540,6 +551,7 @@ impl Daemon {
             }
             Command::SetSearch { pattern } => {
                 self.search = pattern.filter(|p| !p.is_empty());
+                self.search_re = self.search.as_deref().map(Regex::new).and_then(|r| r.ok());
                 self.push();
             }
             Command::Add { uri, title, tags } => self.add_media(uri, title, tags),
@@ -556,10 +568,12 @@ impl Daemon {
                     self.log(&format!("update error: {e}"));
                     self.notify = Some("update failed".into());
                 }
+                self.media_dirty = true;
                 self.push();
             }
             Command::Delete { id } => {
                 let _ = self.lib.delete_media(id);
+                self.media_dirty = true;
                 self.mini_queue.retain(|x| *x != id);
                 if self.now_id == Some(id) {
                     self.now_id = None;
@@ -598,6 +612,7 @@ impl Daemon {
             Command::ToggleFavorite { id } => {
                 if let Ok(Some(m)) = self.lib.media(id) {
                     let _ = self.lib.set_favorite(id, !m.favorite);
+                    self.media_dirty = true;
                 }
                 self.push();
             }
@@ -681,31 +696,42 @@ impl Daemon {
                 self.notify = Some("add failed".into());
             }
         }
+        self.media_dirty = true;
         self.push();
     }
 
     fn build_snapshot(&mut self) -> Snapshot {
-        let all = self.lib.all_media().unwrap_or_default();
-        let pat = self.search.clone();
-        let re = match pat.as_deref() {
-            Some(p) if !p.is_empty() => Regex::new(p).ok(),
-            _ => None,
-        };
-        let queue = filter_queue(&all, &self.active_tags, re.as_ref());
-        let tags = self.lib.tags(&self.active_tags).unwrap_or_default();
+        if self.media_dirty {
+            self.refresh_library();
+        }
+        let re = self.search_re.as_ref();
+        let queue = filter_queue(&self.media_all, &self.active_tags, re);
+        let tags: Vec<TagInfo> = self
+            .tag_counts
+            .iter()
+            .map(|(name, count)| TagInfo {
+                name: name.clone(),
+                checked: self.active_tags.contains(name),
+                count: *count,
+            })
+            .collect();
         let selected = self
             .selected
-            .and_then(|id| all.iter().find(|m| m.id == id).cloned());
+            .and_then(|id| self.media_all.iter().find(|m| m.id == id).cloned());
         let now = self.now_id.map(|id| NowPlaying {
             id,
             position: self.position,
-            duration: all.iter().find(|m| m.id == id).and_then(|m| m.duration),
+            duration: self
+                .media_all
+                .iter()
+                .find(|m| m.id == id)
+                .and_then(|m| m.duration),
             paused: self.paused,
         });
         Snapshot {
             theme: self.theme,
             transparent: self.transparent,
-            all_media: all,
+            all_media: self.media_all.clone(),
             queue,
             mini_queue: self.mini_queue.clone(),
             tags,
@@ -719,21 +745,25 @@ impl Daemon {
         }
     }
 
-    fn snapshot_value(&mut self) -> Value {
-        match serde_json::to_value(self.build_snapshot()) {
-            Ok(v) => v,
-            Err(e) => {
-                self.log(&format!("snapshot serialize: {e}"));
-                Value::Null
-            }
-        }
+    fn snapshot_text(&mut self) -> String {
+        let snap = self.build_snapshot();
+        self.last_snap = Some(snap.clone());
+        serde_json::to_string(&snap).unwrap_or_else(|e| {
+            self.log(&format!("snapshot serialize: {e}"));
+            Value::Null.to_string()
+        })
     }
 
     fn push(&mut self) {
-        let snap = self.snapshot_value();
-        self.clients.retain(|_, tx| tx.send(snap.clone()).is_ok());
+        let snap = self.build_snapshot();
         self.dirty = false;
+        if self.last_snap.as_ref() == Some(&snap) {
+            return;
+        }
         self.last_push = Instant::now();
+        let text = serde_json::to_string(&snap).unwrap_or_else(|_| Value::Null.to_string());
+        self.last_snap = Some(snap);
+        self.clients.retain(|_, tx| tx.send(text.clone()).is_ok());
     }
 
     fn persist(&self) {
@@ -793,9 +823,9 @@ fn client_reader(stream: UnixStream, id: u64, tx: Sender<LoopEvent>) {
     let _ = tx.send(LoopEvent::Drop { id });
 }
 
-fn client_writer(mut stream: UnixStream, rx: Receiver<Value>) {
-    for msg in rx {
-        let mut body = msg.to_string();
+fn client_writer(mut stream: UnixStream, rx: Receiver<String>) {
+    for text in rx {
+        let mut body = text;
         body.push('\n');
         if stream.write_all(body.as_bytes()).is_err() {
             break;

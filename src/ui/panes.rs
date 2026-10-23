@@ -92,6 +92,14 @@ fn progress_bar(pos: f64, dur: f64, width: usize) -> String {
     format!("[{bar}]")
 }
 
+pub fn scroll_offset(total: usize, cursor: usize, height: usize) -> usize {
+    if height == 0 || total <= height {
+        0
+    } else {
+        cursor.saturating_sub(height / 2).min(total - height)
+    }
+}
+
 pub fn filter_pane(
     frame: &mut Frame,
     title: &str,
@@ -139,10 +147,14 @@ pub fn queue_pane(
         .and_then(|p| regex::Regex::new(p).ok());
     let by_id: std::collections::HashMap<i64, &MediaInfo> =
         media.iter().map(|m| (m.id, m)).collect();
+    let height = area.height.saturating_sub(2) as usize;
+    let start = scroll_offset(queue.len(), cursor, height);
     let items: Vec<ListItem> = queue
         .iter()
         .enumerate()
         .filter_map(|(i, id)| by_id.get(id).copied().map(|m| (i, m)))
+        .skip(start)
+        .take(height)
         .map(|(i, m)| {
             let now_marks = now.filter(|n| n.id == m.id).is_some();
             let play_mark = if now_marks { ">" } else { " " };
@@ -409,5 +421,30 @@ pub fn status_bar(
     StatusBarHits {
         rep: hit_rep,
         shf: hit_shf,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scroll_offset_pins_cursor_to_center() {
+        assert_eq!(scroll_offset(20, 0, 5), 0);
+        assert_eq!(scroll_offset(20, 2, 5), 0);
+        assert_eq!(scroll_offset(20, 9, 5), 7);
+        assert_eq!(scroll_offset(20, 17, 5), 15);
+        assert_eq!(scroll_offset(20, 19, 5), 15);
+    }
+
+    #[test]
+    fn scroll_offset_no_scrolling_when_fits() {
+        assert_eq!(scroll_offset(3, 2, 5), 0);
+        assert_eq!(scroll_offset(5, 0, 5), 0);
+    }
+
+    #[test]
+    fn scroll_offset_zero_height_is_zero() {
+        assert_eq!(scroll_offset(20, 15, 0), 0);
     }
 }
