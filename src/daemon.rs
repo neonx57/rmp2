@@ -135,7 +135,7 @@ impl Daemon {
             media_dirty: true,
             last_snap: None,
             position: last.position,
-            paused: !last.playing,
+            paused: true,
             loading: false,
             paused_for_cache: false,
             error: None,
@@ -149,9 +149,10 @@ impl Daemon {
         };
         if let Some(id) = d.now_id {
             if d.lib.media(id).ok().flatten().is_some() {
-                d.pending_resume = Some((id, d.position, !d.paused));
+                d.pending_resume = Some((id, d.position, false));
             } else {
                 d.now_id = None;
+                d.position = 0.0;
             }
         }
         d.install_signals();
@@ -199,6 +200,7 @@ impl Daemon {
         if let Some(id) = self.now_id
             && let Some(m) = self.lib.media(id).ok().flatten()
         {
+            let _ = mpv.set_pause(self.paused);
             let _ = mpv.loadfile(&m.uri);
             self.loading = true;
             self.pending_resume = Some((id, self.position, !self.paused));
