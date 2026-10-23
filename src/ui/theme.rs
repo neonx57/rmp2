@@ -36,6 +36,17 @@ pub fn palette(theme: Theme) -> Palette {
     }
 }
 
+pub fn statusline_palette() -> Palette {
+    Palette {
+        text: Color::Black,
+        muted: Color::DarkGray,
+        accent: Color::Blue,
+        now_playing: Color::Green,
+        warn: Color::Red,
+        pane_bg: Some(Color::White),
+    }
+}
+
 pub fn settings_options() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
         ("colorscheme", vec!["dark", "light"]),
@@ -101,5 +112,12 @@ mod tests {
         assert_ne!(dark.text, light.text);
         assert_ne!(dark.accent, light.accent);
         assert_ne!(dark.pane_bg, light.pane_bg);
+    }
+
+    #[test]
+    fn statusline_palette_is_white_for_both_themes() {
+        assert_eq!(statusline_palette().pane_bg, Some(Color::White));
+        assert_eq!(statusline_palette().text, Color::Black);
+        assert_ne!(statusline_palette().text, palette(Theme::Dark).text);
     }
 }

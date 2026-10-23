@@ -5,7 +5,7 @@ use crate::proto::{MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo};
 use crate::ui::theme::{self, Palette};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
@@ -81,28 +81,52 @@ fn fmt_time(secs: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-fn progress_bar(pos: f64, dur: f64, width: usize) -> String {
+fn progress_bar(pos: f64, dur: f64, width: usize) -> Vec<Span<'static>> {
     let pct = if dur <= 0.0 {
         0.0
     } else {
         (pos / dur).clamp(0.0, 1.0)
     };
     let filled = (pct * width as f64) as usize;
-    let mut bar = "=".repeat(filled);
-    bar.push_str(&"-".repeat(width.saturating_sub(filled)));
-    format!("[{bar}]")
+    let bold = Style::default()
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let plain = Style::default().fg(Color::Black);
+    vec![
+        Span::styled("[", bold),
+        Span::styled("=".repeat(filled), bold),
+        Span::styled("-".repeat(width.saturating_sub(filled)), plain),
+        Span::styled("]", bold),
+    ]
 }
 
-fn loading_bar(elapsed: Duration, width: usize) -> String {
+fn loading_bar(elapsed: Duration, width: usize) -> Vec<Span<'static>> {
     if width < 4 {
-        return format!("[{}]", "=".repeat(width));
+        return vec![Span::styled(
+            format!("[{}]", "=".repeat(width)),
+            Style::default()
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )];
     }
-    let span = width - 2;
-    let step = (elapsed.as_millis() as usize / 40) % (2 * span);
-    let at = if step < span { step } else { 2 * span - step };
-    let mut bar = "-".repeat(width);
-    bar.replace_range(at..at + 2, "==");
-    format!("[{bar}]")
+    let span_len = width - 2;
+    let step = (elapsed.as_millis() as usize / 40) % (2 * span_len);
+    let at = if step < span_len {
+        step
+    } else {
+        2 * span_len - step
+    };
+    let bold = Style::default()
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let plain = Style::default().fg(Color::Black);
+    vec![
+        Span::styled("[", bold),
+        Span::styled("-".repeat(at), plain),
+        Span::styled("==".to_string(), bold),
+        Span::styled("-".repeat(span_len - at), plain),
+        Span::styled("]", bold),
+    ]
 }
 
 pub fn scroll_offset(total: usize, cursor: usize, height: usize) -> usize {
@@ -321,6 +345,8 @@ pub fn search_bar(
     invalid: bool,
     p: Palette,
 ) {
+    let text_style = Style::default().fg(p.text);
+    let cursor_style = Style::default().fg(p.warn).add_modifier(Modifier::REVERSED);
     let mut spans: Vec<Span> = Vec::new();
     let prompt = Span::styled(
         "/",
@@ -328,12 +354,9 @@ pub fn search_bar(
     );
     spans.push(prompt);
     let cur = cursor.min(text.len());
-    spans.push(Span::raw(text[..cur].to_string()));
-    spans.push(Span::styled(
-        " ",
-        Style::default().fg(p.warn).add_modifier(Modifier::REVERSED),
-    ));
-    spans.push(Span::raw(text[cur..].to_string()));
+    spans.push(Span::styled(text[..cur].to_string(), text_style));
+    spans.push(Span::styled(" ", cursor_style));
+    spans.push(Span::styled(text[cur..].to_string(), text_style));
     let counter = if invalid {
         Span::styled("0/0", Style::default().fg(p.warn))
     } else {
@@ -344,7 +367,8 @@ pub fn search_bar(
     let gap = area.width.saturating_sub((left_w + right_w) as u16) as usize;
     spans.push(Span::raw(" ".repeat(gap)));
     spans.push(counter);
-    let para = Paragraph::new(Line::from(spans));
+    let bareg = p.pane_bg.unwrap_or(Color::White);
+    let para = Paragraph::new(Line::from(spans)).style(Style::default().bg(bareg));
     frame.render_widget(para, area);
 }
 
@@ -360,7 +384,9 @@ pub fn status_bar(
     msg: Option<&str>,
     anim: Option<Duration>,
 ) -> StatusBarHits {
-    let p = theme::palette(snap.theme);
+    let p = theme::statusline_palette();
+    let text_style = Style::default().fg(p.text);
+    let bold_style = text_style.add_modifier(Modifier::BOLD);
     let mut left: Vec<Span> = Vec::new();
     if let Some(text) = msg {
         left.push(Span::styled(
@@ -375,29 +401,26 @@ pub fn status_bar(
             .map(display_name)
             .unwrap_or_else(|| "unknown".into());
         let dur = n.duration.unwrap_or(0.0);
-        left.push(Span::raw(format!(
-            "{} / {} ",
-            fmt_time(n.position),
-            fmt_time(dur)
-        )));
+        left.push(Span::styled(
+            format!("{} /", fmt_time(n.position)),
+            bold_style,
+        ));
+        left.push(Span::styled(format!(" {} ", fmt_time(dur)), text_style));
         let w = area.width.saturating_sub(46) as usize;
         let bar = match anim {
             Some(t) => loading_bar(t, w.min(20)),
             None => progress_bar(n.position, dur, w.min(20)),
         };
-        left.push(Span::raw(bar));
-        left.push(Span::styled(
-            format!(" {title}"),
-            Style::default().fg(p.now_playing),
-        ));
+        left.extend(bar);
+        left.push(Span::styled(format!(" {title}"), bold_style));
     } else {
-        left.push(Span::raw("stopped"));
+        left.push(Span::styled("stopped", bold_style));
     }
-    let lbl = Style::default().fg(p.warn);
+    let lbl = bold_style;
     let mut right: Vec<Span> = Vec::new();
     right.push(Span::raw("  "));
     right.push(Span::styled("vol", lbl));
-    right.push(Span::raw(format!(" {:>3}", snap.volume)));
+    right.push(Span::styled(format!(" {:>3}", snap.volume), text_style));
     let rep = match snap.repeat {
         RepeatMode::Off => "off",
         RepeatMode::All => "all",
@@ -405,14 +428,17 @@ pub fn status_bar(
     };
     right.push(Span::raw("  "));
     right.push(Span::styled("rep", lbl));
-    right.push(Span::raw(format!(" {rep}")));
+    right.push(Span::styled(format!(" {rep}"), text_style));
     right.push(Span::raw("  "));
     right.push(Span::styled("shf", lbl));
-    right.push(Span::raw(if snap.shuffle { " on" } else { " off" }));
+    right.push(Span::styled(
+        if snap.shuffle { " on" } else { " off" },
+        text_style,
+    ));
     if let Some(tags) = snap.tags.iter().find(|t| t.checked) {
         right.push(Span::raw("  "));
         right.push(Span::styled("tags", lbl));
-        right.push(Span::raw(format!(":{}", tags.name)));
+        right.push(Span::styled(format!(":{}", tags.name), text_style));
     }
     let left_w: usize = left.iter().map(|s| s.content.chars().count()).sum();
     let right_w: usize = right.iter().map(|s| s.content.chars().count()).sum();
@@ -434,7 +460,8 @@ pub fn status_bar(
     let mut spans = left;
     spans.push(Span::raw(" ".repeat(gap)));
     spans.extend(right);
-    let para = Paragraph::new(Line::from(spans));
+    let bareg = p.pane_bg.unwrap_or(Color::White);
+    let para = Paragraph::new(Line::from(spans)).style(Style::default().bg(bareg));
     frame.render_widget(para, area);
     StatusBarHits {
         rep: hit_rep,
@@ -466,20 +493,48 @@ mod tests {
         assert_eq!(scroll_offset(20, 15, 0), 0);
     }
 
+    fn bar_text(spans: &[Span]) -> String {
+        spans.iter().map(|s| s.content.to_string()).collect()
+    }
+
+    fn is_bold(span: &Span) -> bool {
+        span.style.add_modifier.contains(Modifier::BOLD)
+    }
+
     #[test]
     fn loading_bar_starts_left_and_reaches_right() {
-        assert_eq!(loading_bar(Duration::ZERO, 10), "[==--------]");
-        assert_eq!(loading_bar(Duration::from_millis(320), 10), "[--------==]");
+        let zero = loading_bar(Duration::ZERO, 10);
+        assert_eq!(bar_text(&zero), "[==--------]");
+        assert!(zero[0].style.fg == Some(Color::Black) && is_bold(&zero[0]));
+        assert!(is_bold(&zero[2]));
+        assert!(is_bold(&zero[4]));
+        assert!(!is_bold(&zero[1]) && !is_bold(&zero[3]));
+        let right = loading_bar(Duration::from_millis(320), 10);
+        assert_eq!(bar_text(&right), "[--------==]");
     }
 
     #[test]
     fn loading_bar_bounces_back_left() {
-        assert_eq!(loading_bar(Duration::from_millis(720), 10), "[--==------]");
-        assert_eq!(loading_bar(Duration::from_millis(640), 10), "[==--------]");
+        let back = loading_bar(Duration::from_millis(720), 10);
+        assert_eq!(bar_text(&back), "[--==------]");
+        let cycle = loading_bar(Duration::from_millis(640), 10);
+        assert_eq!(bar_text(&cycle), "[==--------]");
     }
 
     #[test]
     fn loading_bar_tiny_width() {
-        assert_eq!(loading_bar(Duration::ZERO, 3), "[===]");
+        let tiny = loading_bar(Duration::ZERO, 3);
+        assert_eq!(bar_text(&tiny), "[===]");
+        assert!(is_bold(&tiny[0]));
+    }
+
+    #[test]
+    fn progress_bar_splits_bold_brackets_and_fill() {
+        let bar = progress_bar(100.0, 200.0, 10);
+        assert_eq!(bar_text(&bar), "[=====-----]");
+        assert!(is_bold(&bar[0]));
+        assert!(is_bold(&bar[1]) && bar[1].content == "=====");
+        assert!(!is_bold(&bar[2]) && bar[2].content == "-".repeat(5));
+        assert!(is_bold(&bar[3]));
     }
 }

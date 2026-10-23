@@ -623,8 +623,12 @@ impl App {
 
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let area = frame.area();
-        let [main, status] =
-            Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
+        let [main, status, _cmdline] = Layout::vertical([
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .areas(area);
         let [filter, queue, state] = Layout::horizontal([
             Constraint::Ratio(1, 4),
             Constraint::Ratio(2, 4),
@@ -703,7 +707,7 @@ impl App {
                         s.queue.len(),
                         s.all_media.len(),
                         invalid,
-                        p,
+                        theme::statusline_palette(),
                     );
                 } else {
                     let hits = status_bar(frame, status, s, msg, anim);
