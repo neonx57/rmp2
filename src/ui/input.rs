@@ -234,9 +234,10 @@ mod tests {
 
     #[test]
     fn none_unbinds_a_default_action() {
-        let raw = "[keybindings]\nmove_up = \"none\"\n";
-        let cfg = Config::parse(raw).unwrap();
-        let km = Keymap::build(&cfg);
+        let mut raw = Config::default();
+        raw.keybindings
+            .insert("move_up".into(), vec!["none".into()]);
+        let km = Keymap::build(&raw);
         assert_eq!(
             km.resolve(press(KC::Char('j'), KeyModifiers::NONE)),
             Some(Action::MoveDown)
@@ -247,9 +248,9 @@ mod tests {
 
     #[test]
     fn remapped_action_uses_new_key() {
-        let raw = "[keybindings]\ntoggle = \"x\"\n";
-        let cfg = Config::parse(raw).unwrap();
-        let km = Keymap::build(&cfg);
+        let mut raw = Config::default();
+        raw.keybindings.insert("toggle".into(), vec!["x".into()]);
+        let km = Keymap::build(&raw);
         assert_eq!(
             km.resolve(press(KC::Char('x'), KeyModifiers::NONE)),
             Some(Action::Toggle)

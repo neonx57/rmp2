@@ -1,4 +1,4 @@
-# rmp
+# vmp
 
 A simple terminal media player. Backed by [mpv](https://mpv.io) (audio-only),
 driven entirely by the keyboard. Songs are organized with tags; checked tags
@@ -30,8 +30,10 @@ define the play queue. Plays local files and online streams alike.
 - Mouse support: click to focus/select, double-click to play, click `rep`/`shf`
   in the status bar to toggle repeat/shuffle.
 - Background daemon: detach the TUI with `Shift+q` and playback keeps going;
-  reattach by running `rmp` again.
-- Fully configurable keybindings and pane titles (see [CONFIG.md](CONFIG.md)).
+  reattach by running `vmp` again.
+- nvim-style Lua config: `~/.config/vmp/init.lua` with `vmp.opt` and
+  `vmp.map`, plus a `lua/` module directory (`require("custom.opts")`) — see
+  [CONFIG.md](CONFIG.md).
 - Settings dialog (`f10`): dark/light colorscheme and transparency, persisted
   across restarts.
 - Metadata pulled straight from mpv properties - no metadata crate.
@@ -43,7 +45,7 @@ The quickest way to try it:
 
 ```sh
 cargo build --release          # see INSTALL.md for per-OS setup
-rmp                           # spawns the daemon once, then opens the TUI
+vmp                           # spawns the daemon once, then opens the TUI
 ```
 
 Press `a`, enter a path or stream URL, confirm, and `Enter` to play the
@@ -68,7 +70,7 @@ Windows (WSL), plus an optional daemon autostart: **[INSTALL.md](INSTALL.md)**.
 ## Usage
 
 Everything below can be rebound; keybindings and pane titles are configured in
-`config.toml` - see [CONFIG.md](CONFIG.md).
+`init.lua` - see [CONFIG.md](CONFIG.md).
 
 The interface has four sections: Filter (tags), Queue (playlist), Mini Queue,
 and Info (details). `Tab` / `h` / `l` move focus between them.
@@ -104,16 +106,19 @@ Press `:` to open the command line at the bottom of the screen. `Esc` cancels.
 | `:checkhealth`| List dependencies (`mpv`, `yt-dlp`) and report their status  |
 
 The daemon is a separate headless process that owns playback, the library, and
-the queue. It starts automatically on first `rmp` launch and lives at
-`~/.config/rmp2/` (`config.toml`, `library.sqlite3`, `last-state.json`, and
-`rmp.sock` / `rmp.pid` / `rmp.log`). Override the location with `RMP2_DIR`.
+the queue. It starts automatically on first `vmp` launch. Storage follows XDG
+conventions: `~/.config/vmp/` (`init.lua`, `lua/`), `~/.local/share/vmp/`
+(`library.sqlite3`), `~/.local/state/vmp/` (`session.json`, `vmp.log`), and
+`$XDG_RUNTIME_DIR/vmp/` (`vmp.sock`, `vmp.pid`). Each location can be
+overridden with `VMP_CONFIG_DIR`, `VMP_DATA_DIR`, `VMP_STATE_DIR`, and
+`VMP_RUN_DIR`. No `init.lua` is needed to run.
 
 ## Architecture and Crate Ecosystem
 
-A single binary with two modes. `rmp --daemon` runs a headless server: it owns
+A single binary with two modes. `vmp --daemon` runs a headless server: it owns
 the `mpv` subprocess (driven over its JSON IPC socket), the SQLite library,
 and the queue/playback engine, and exposes a JSON protocol over a Unix socket.
-Plain `rmp` spawns the daemon if needed, then runs a thin TUI client that
+Plain `vmp` spawns the daemon if needed, then runs a thin TUI client that
 forwards keys and renders daemon state snapshots. `Shift+q` detaches; only a
 confirmed `q`/`esc` shuts the daemon down.
 
@@ -127,8 +132,8 @@ Source layout:
 | `src/engine.rs`       | Pure queue/tag filtering and repeat/shuffle logic      |
 | `src/proto.rs`        | JSON protocol messages shared by daemon and TUI        |
 | `src/ui/`             | ratatui app shell, input/keymap, panes, dialogs        |
-| `src/config/`         | Config parsing, defaults, key/action validation        |
-| `src/storage/`        | Persisted last-state and runtime paths                 |
+| `src/config/`         | Embedded Lua host, `vmp.opt`/`vmp.map` API, validation |
+| `src/storage/`        | XDG paths and persisted session state                  |
 | `src/commands/`       | Vim-style `:` command parsing                          |
 | `src/app/action.rs`   | Action enum and name/group tables                      |
 
@@ -144,17 +149,18 @@ Crates:
 | `ratatui`          | Terminal UI rendering and layout            |
 | `crossterm`        | Raw terminal, key/mouse input               |
 | `rusqlite`         | SQLite library (bundled)                    |
+| `mlua`             | Embedded Lua 5.4 (vendored) for the config  |
 | `serde`+`serde_json`| JSON protocol + state serialization        |
-| `toml`             | `config.toml` parsing                       |
-| `regex`            | Search filtering                           |
+| `regex`            | Search filtering                            |
 | `signal-hook`      | Daemon shutdown signal handling             |
 
 ## Configuration
 
-All configuration lives in `config.toml` under the config directory - options,
-pane titles, and every keybinding. See **[CONFIG.md](CONFIG.md)** for the full
-reference (keys syntax, actions, defaults) and an annotated example file. A
-commented default `config.toml` is also generated on first run.
+Configuration is an nvim-style Lua script at `~/.config/vmp/init.lua` (user
+created; missing means all defaults): `vmp.opt.*` for options and pane titles,
+`vmp.map.*` for every keybinding. See **[CONFIG.md](CONFIG.md)** for the full
+reference (API, key syntax, actions, defaults) and an annotated example.
+`require()` resolves modules under `~/.config/vmp/lua/`.
 
 ## Contributing
 

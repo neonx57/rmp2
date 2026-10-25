@@ -1,4 +1,4 @@
-use rmp::proto::{Command, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme};
+use vmp::proto::{Command, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme};
 
 fn sample_media(id: i64) -> MediaInfo {
     MediaInfo {
@@ -170,6 +170,6 @@ fn bad_command_json_is_rejected() {
 #[test]
 fn favorite_tag_constant_is_load_bearing() {
     let m = sample_media(1);
-    assert!(m.tags.contains(&rmp::proto::FAVORITE_TAG.to_string()));
-    assert_eq!(rmp::proto::FAVORITE_TAG, "favorite");
+    assert!(m.tags.contains(&vmp::proto::FAVORITE_TAG.to_string()));
+    assert_eq!(vmp::proto::FAVORITE_TAG, "favorite");
 }

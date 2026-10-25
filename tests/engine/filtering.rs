@@ -1,6 +1,6 @@
 use regex::Regex;
-use rmp::engine::{filter_queue, matches, search_blob};
-use rmp::proto::MediaInfo;
+use vmp::engine::{filter_queue, matches, search_blob};
+use vmp::proto::MediaInfo;
 
 fn media(id: i64, title: &str, uri: &str, tags: &[&str]) -> MediaInfo {
     MediaInfo {

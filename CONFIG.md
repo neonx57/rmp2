@@ -1,108 +1,120 @@
-# rmp Configuration
+# vmp Configuration
 
-`rmp` reads its settings from `config.toml`. This document explains every
-option.
+`vmp` reads its settings from a Lua file, `init.lua`, the same way nvim reads
+`init.lua`. No config file is required: missing entries fall back to defaults.
 
-## Config file location
+## Files
 
-The config lives in the rmp2 config directory together with the library
-database, the daemon socket and logs:
+vmp follows the XDG layout and never generates config files:
 
-| Path                                             | Notes                                    |
-| ------------------------------------------------ | ---------------------------------------- |
-| `~/.config/rmp2/config.toml`                     | this file                                |
-| `~/.config/rmp2/library.sqlite3`                 | media library database                   |
-| `~/.config/rmp2/last-state.json`                 | volume/repeat/shuffle/active tags/theme  |
-| `~/.config/rmp2/rmp.sock` / `rmp.pid` / `rmp.log` | daemon IPC, pid file, log               |
+| Path                            | Notes                                    |
+| ------------------------------- | ---------------------------------------- |
+| `~/.config/vmp/init.lua`        | config entry point (user-created)        |
+| `~/.config/vmp/lua/`            | root for `require()` from your config    |
+| `~/.local/share/vmp/library.sqlite3` | media library database             |
+| `~/.local/state/vmp/session.json`    | volume/repeat/shuffle/active tags/theme |
+| `~/.local/state/vmp/vmp.log`    | daemon log                               |
+| `$XDG_RUNTIME_DIR/vmp/vmp.sock` / `vmp.pid` | daemon IPC, pid file         |
 
-`~/.config` follows `$XDG_CONFIG_HOME`. Set `RMP2_DIR` to an absolute path to
-use a completely different directory instead:
+Each location has an env override: `VMP_CONFIG_DIR`, `VMP_DATA_DIR`,
+`VMP_STATE_DIR`, `VMP_RUN_DIR` (all absolute paths):
 
 ```sh
-RMP2_DIR=/mnt/media/rmp rmp
+VMP_CONFIG_DIR=/mnt/media/vmp-config vmp
 ```
 
-On the first launch `rmp` writes a fully commented copy of the default config
-to `config.toml` and starts with those defaults. Edit that file and restart.
+Minimal `init.lua` (everything starts from defaults, so change only what you
+want):
+
+```lua
+vmp.opt.volume_step = 3
+vmp.opt.titles.queue = "Playlist"
+vmp.map.move_down = { "j", "down" }
+```
+
+Separator inside `require` usage: `local my = require("custom.opts")` loads
+`~/.config/vmp/lua/custom/opts.lua`.
 
 ## Validation and errors
 
-The config is validated on every startup (both the daemon and the TUI). If it
-contains an error, `rmp` refuses to start and prints one line per problem:
+The config is Lua executed on every startup (both the daemon and the TUI run
+it). On error, `vmp` refuses to start and prints `invalid config:` followed by
+the problem, e.g.:
 
-- `invalid action "..."` - the left-hand side is not a known action name.
-- `invalid key "..." for action "..."` - the key string is not recognized.
-- `key "..." bound to multiple actions (...)  - the same key is used twice.
-- TOML parse errors (bad syntax, duplicate keys) are reported as well.
+- `vmp.opt: unknown option 'volume_stp'` - typos are rejected like nvim.
+- `vmp.map: unknown action 'frobnicate'` - the left-hand side is not a known
+  action name.
+- `vmp.opt.volume_step: expected integer, got lua type table` - wrong value.
+- Lua syntax and runtime errors are reported with the line that failed.
 
 Binding a key to nothing disables that action's default key(s):
 
-```toml
-[keybindings]
-delete = "none"   # 'd' no longer deletes
+```lua
+vmp.map.delete = "none"   -- 'd' no longer deletes
 ```
 
 ## Full annotated example
 
-```toml
-# Binary used for playback. Any mpv-compatible or yt-dlp command works.
-mpv_binary = "mpv"
+```lua
+-- Binary used for playback. Any mpv-compatible or yt-dlp command works.
+vmp.opt.mpv_binary = "mpv"
 
-# Amount the volume changes per press of volume_up / volume_down.
-volume_step = 5
+-- Amount the volume changes per press of volume_up / volume_down.
+vmp.opt.volume_step = 5
 
-# Seek length in seconds for seek_back / seek_fwd.
-seek_step = 5.0
+-- Seek length in seconds for seek_back / seek_fwd.
+vmp.opt.seek_step = 5.0
 
-# Border titles of the four panes. Optional; defaults shown.
-[titles]
-filter = "Filter"      # tag filter pane (top-left)
-queue = "Queue"        # main queue pane (right)
-mini = "Mini Queue"    # mini-queue pane (bottom-left)
-info = "Info"          # media details pane
+-- Border titles of the four panes. Optional; shown values are defaults.
+vmp.opt.titles.filter = "Filter"  -- tag filter pane (top-left)
+vmp.opt.titles.queue  = "Queue"   -- main queue pane (right)
+vmp.opt.titles.mini   = "Mini Queue" -- mini-queue pane (bottom-left)
+vmp.opt.titles.info   = "Info"    -- media details pane
 
-# Controls. Format: <action> = <key or list of keys>
-# Multi-key lists must be quoted strings inside square brackets.
-[keybindings]
-move_down   = ["j", "down"]
-move_up     = ["k", "up"]
-prev_section   = "h"
-next_section   = "l"
-cycle_focus    = "tab"
-cycle_focus_back = "backtab"
-activate    = "enter"
-toggle      = "space"
-next_track  = "n"
-prev_track  = "p"
-volume_up   = "K"          # uppercase letter means Shift
-volume_down = "J"
-seek_back   = ["H", "left"]
-seek_fwd    = ["L", "right"]
-repeat      = "r"
-shuffle     = "s"
-add_media   = "a"
-edit_media  = "e"
-search      = "/"
-favorite    = "f"
-add_mini    = "A"
-focus_mini  = "b"
-delete      = "d"
-mini_move_up    = "ctrl+k"
-mini_move_down  = "ctrl+j"
-confirm_quit = ["q", "esc"]
-detach      = "Q"
-settings    = "f10"
-help        = "?"
-command     = ":"
+-- Controls. Format: vmp.map.<action> = "key" or { "key", "key" }
+vmp.map.move_down        = { "j", "down" }
+vmp.map.move_up          = { "k", "up" }
+vmp.map.prev_section     = "h"
+vmp.map.next_section     = "l"
+vmp.map.cycle_focus      = "tab"
+vmp.map.cycle_focus_back = "backtab"
+vmp.map.activate         = "enter"
+vmp.map.toggle           = "space"
+vmp.map.next_track       = "n"
+vmp.map.prev_track       = "p"
+vmp.map.volume_up        = "K"        -- uppercase letter means Shift
+vmp.map.volume_down      = "J"
+vmp.map.seek_back        = { "H", "left" }
+vmp.map.seek_fwd         = { "L", "right" }
+vmp.map["repeat"]        = "r"        -- brackets required: repeat is a Lua keyword
+vmp.map.shuffle          = "s"
+vmp.map.add_media        = "a"
+vmp.map.edit_media       = "e"
+vmp.map.search           = "/"
+vmp.map.favorite         = "f"
+vmp.map.add_mini         = "A"
+vmp.map.focus_mini       = "b"
+vmp.map.delete           = "d"
+vmp.map.mini_move_up     = "ctrl+k"
+vmp.map.mini_move_down   = "ctrl+j"
+vmp.map.confirm_quit     = { "q", "esc" }
+vmp.map.detach           = "Q"
+vmp.map.settings         = "f10"
+vmp.map.help             = "?"
+vmp.map.command          = ":"
+-- Enter on the already-loaded selected track resumes it instead of reloading.
+vmp.opt.enter_resume_loaded = true
 ```
 
-## Top-level options
+## Options (`vmp.opt`)
 
-| Option         | Type    | Default | Meaning                                        |
-| -------------- | ------- | ------- | ---------------------------------------------- |
-| `mpv_binary`   | string  | `"mpv"` | Executable used for audio playback             |
-| `volume_step`  | integer | `5`     | Volume change per `volume_up`/`volume_down`    |
-| `seek_step`    | float   | `5.0`   | Seek length in seconds per `seek_back`/`seek_fwd` |
+| Option                | Type    | Default | Meaning                                        |
+| --------------------- | ------- | ------- | ----------------------------------------------- |
+| `mpv_binary`          | string  | `"mpv"` | Executable used for audio playback              |
+| `volume_step`         | integer | `5`     | Volume change per `volume_up`/`volume_down`     |
+| `seek_step`           | float   | `5.0`   | Seek length in seconds per `seek_back`/`seek_fwd` |
+| `enter_resume_loaded` | boolean | `true`  | Resume instead of reload on Enter over the loaded track |
+| `titles`              | table   | see above | Pane border titles: `filter`, `queue`, `mini`, `info` |
 
 ## Settings dialog
 
@@ -115,7 +127,7 @@ dialog. It has two options:
 | `transparency` | off / on     | `on` skips pane background painting so the terminal's own background shows through |
 
 Changes apply immediately, broadcast to every connected client, and are
-persisted in `last-state.json` so they survive daemon restarts. Navigate with
+persisted in `session.json` so they survive daemon restarts. Navigate with
 `up`/`down`, change a value with `left`/`right` or `enter`, close with `esc`.
 
 ## Commands
@@ -133,33 +145,36 @@ bottom of the screen. `Esc` cancels without running anything.
 only needed for online streams. Unknown commands are reported in the status
 line.
 
-## `[titles]`
+## Titles (`vmp.opt.titles`)
 
 Renames the four pane borders. Useful if you show different content or want a
-different language. Missing entries fall back to the defaults.
+different language. Assign a single field (`vmp.opt.titles.info = "Now"`) and
+the rest fall back to defaults, or assign the whole table at once.
 
-## `[keybindings]`
+## Keybindings (`vmp.map`)
 
 Every line binds exactly one action to a key (or a list of keys):
 
-```toml
-toggle = "space"        # one key
-confirm_quit = ["q", "esc"]  # several keys trigger the same action
-repeat = "none"         # unbind
-search = "ctrl+s"       # a control chord
+```lua
+vmp.map.toggle = "space"              -- one key
+vmp.map.confirm_quit = { "q", "esc" } -- several keys trigger the same action
+vmp.map["repeat"] = "none"            -- unbind
+vmp.map.search = "ctrl+s"             -- a control chord
 ```
 
 Rules:
 
 - Actions must use their exact names (see below).
 - A key may appear in only one action.
-- An empty list `[]` also unbinds the action.
 - Defaults fill in for anything you do not set; you never need to write the
-  whole table.
+  whole map.
 
 > Shift caveat: terminals report `Shift+letter` as the uppercase letter, so
-> `volume_up = "K"` is bound to `Shift+k`. There is no separate "shift modifier"
-> syntax.
+> `vmp.map.volume_up = "K"` is bound to `Shift+k`. There is no separate "shift
+> modifier" syntax.
+
+> Lua keywords: action names that collide with Lua keywords must use bracket
+> syntax (`vmp.map["repeat"]`). `repeat = "r"` is a syntax error.
 
 ## Key syntax
 
@@ -213,7 +228,7 @@ Named keys: `space`, `enter`, `esc`, `tab`, `backtab`, `up`, `down`, `left`,
 
 ## Default keybindings
 
-If a section is missing entirely from `config.toml`, these defaults apply:
+With no `vmp.map` assignments, these defaults apply:
 
 | Action             | Keys                    |
 | ------------------ | ----------------------- |
@@ -247,3 +262,16 @@ If a section is missing entirely from `config.toml`, these defaults apply:
 | `settings`         | `f10`                   |
 | `help`             | `?`                     |
 | `command`          | `:`                     |
+
+## Migrating from rmp2
+
+vmp replaces the old rmp2 project and its TOML config. There is no automatic
+migration: create `~/.config/vmp/init.lua` yourself and move your library DB:
+
+```sh
+mkdir -p ~/.local/share/vmp
+mv ~/.config/rmp2/library.sqlite3 ~/.local/share/vmp/
+```
+
+Convert any `config.toml` overrides to the Lua form above by hand
+(`action = "key"` becomes `vmp.map.<action> = "key"`).

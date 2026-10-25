@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn roundtrip_media() {
-        let dir = std::env::temp_dir().join(format!("rmp-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("vmp-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("roundtrip.sqlite3");
         let _ = std::fs::remove_file(&db);
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn add_updates_existing_uri() {
-        let dir = std::env::temp_dir().join(format!("rmp-test2-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("vmp-test2-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("t.sqlite3");
         let _ = std::fs::remove_file(&db);
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn migrates_legacy_name_column() {
-        let dir = std::env::temp_dir().join(format!("rmp-test3-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("vmp-test3-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("legacy.sqlite3");
         let _ = std::fs::remove_file(&db);

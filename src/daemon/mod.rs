@@ -75,7 +75,7 @@ pub struct Daemon {
 impl Daemon {
     pub fn run() -> Result<(), Error> {
         let paths = Paths::resolve();
-        let cfg = Config::load(&paths.config)?;
+        let cfg = Config::load(&paths.config, &paths.lua_dir())?;
         Daemon::serve(paths, cfg)
     }
 
@@ -170,7 +170,7 @@ impl Daemon {
     }
 
     fn ensure_mpv(&mut self) -> Result<(), String> {
-        let ipc = self.paths.root.join("mpv.sock");
+        let ipc = self.paths.mpv_sock.clone();
         let (mut mpv, rx) = Mpv::spawn(&self.cfg.mpv_binary, &ipc, false)?;
         let _ = mpv.volume(self.volume);
         let _ = mpv.command(serde_json::json!(["request_log_messages", "warn"]));
@@ -307,6 +307,16 @@ impl Daemon {
 
     fn play_id(&mut self, id: i64) {
         self.start_playback(id, true);
+    }
+
+    fn resume_loaded(&mut self) {
+        if self.paused
+            && let Some(m) = self.mpv.as_mut()
+        {
+            let _ = m.set_pause(false);
+        }
+        self.paused = false;
+        self.push();
     }
 
     fn play_mini(&mut self, id: i64) {

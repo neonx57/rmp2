@@ -1,8 +1,8 @@
 # Protocol reference
 
 The daemon and the TUI exchange newline-delimited JSON over the Unix socket at
-`~/.config/rmp2/rmp.sock`. Types are defined in `src/proto.rs`; this document
-describes the wire behavior pinned by `tests/protocol.rs`.
+`$XDG_RUNTIME_DIR/vmp/vmp.sock`. Types are defined in `src/proto.rs`; this
+document describes the wire behavior pinned by `tests/protocol.rs`.
 
 ## Commands (TUI -> daemon)
 
@@ -88,5 +88,6 @@ Field notes:
 ## Constants
 
 - `FAVORITE_TAG = "favorite"` (exported from `proto`).
-- The socket and runtime paths come from `RMP2_DIR`/XDG config dir, see
-  [docs/configuration.md](configuration.md).
+- The socket lives in the runtime dir and other paths come from the XDG
+  layout (`VMP_CONFIG_DIR` / `VMP_DATA_DIR` / `VMP_STATE_DIR` / `VMP_RUN_DIR`
+  override), see [docs/configuration.md](configuration.md).

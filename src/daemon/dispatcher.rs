@@ -172,7 +172,13 @@ impl Daemon {
                     self.play_id(n);
                 }
             }
-            Command::Play { id } => self.play_id(id),
+            Command::Play { id } => {
+                if self.cfg.enter_resume_loaded && self.now_id == Some(id) && self.mpv.is_some() {
+                    self.resume_loaded();
+                } else {
+                    self.play_id(id);
+                }
+            }
             Command::Select { id } => {
                 self.selected = Some(id);
                 self.push();
@@ -378,7 +384,5 @@ impl Daemon {
 }
 
 fn probe_path() -> std::path::PathBuf {
-    Paths::resolve()
-        .root
-        .join(format!("probe-{}.sock", std::process::id()))
+    Paths::resolve().probe_sock(std::process::id())
 }

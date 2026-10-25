@@ -3,16 +3,16 @@
 ## Where tests live
 
 - **Unit tests** sit next to the code in `#[cfg(test)] mod tests` blocks:
-  config parse/migrate rules, engine filtering/repeat/shuffle, protocol serde,
-  db schema/queries, keymap and line input, scroll offset and status bar.
-- **Integration tests** live under `tests/` and link against the `rmp` lib:
+  engine filtering/repeat/shuffle, protocol serde, db schema/queries, keymap
+  and line input, scroll offset and status bar.
+- **Integration tests** live under `tests/` and link against the `vmp` lib:
 
 | Suite                       | Covers                                                              |
 | --------------------------- | --------------------------------------------------------------------- |
 | `tests/engine.rs`           | queue walking, repeat/shuffle (`tests/engine/{queue,filtering,shuffle}.rs`) |
 | `tests/protocol.rs`         | `Command`/`Snapshot` JSON wire format, tagged action names, strict parsing |
-| `tests/config.rs`           | parse+defaults merge, validation errors, legacy migration on load    |
-| `tests/storage.rs`          | `Paths` layout, `RMP2_DIR` override, last-state roundtrip + corruption fallback |
+| `tests/config.rs`           | Lua host eval/defaults merge, `vmp.opt`/`vmp.map` validation errors, `require()` over `lua/`, `none` unbind |
+| `tests/storage.rs`          | XDG `Paths` layout, `VMP_*_DIR` env overrides, `session.json` roundtrip + corruption fallback |
 | `tests/database.rs`         | library CRUD, uri upsert, tag/favorite semantics, legacy column migration |
 | `tests/daemon.rs`           | real daemon e2e: socket snapshots, library add/select/queue, persisted state, shutdown; plus a cross-process "daemon already running" test using the built binary |
 | `tests/mpv_integration.rs`  | mpv probe of a generated WAV fixture + a live `Mpv` IPC session; self-skips (printing "skip") when mpv is missing |
@@ -34,10 +34,10 @@ cargo test --test mpv_integration -- --nocapture   # see skip/progress messages
 `tests/daemon.rs` runs `Daemon::serve(temp_paths, Config::default())` on a
 thread, connects the real `Connection`, asserts snapshots with a polling
 helper (the daemon pushes over the socket asynchronously), and finishes with
-`Command::Shutdown`. The cross-process test spawns `env!("CARGO_BIN_EXE_rmp")
---daemon` with `RMP2_DIR` pointed at a temp root: it verifies the
-`daemon already running` refusal, sends state-changing commands, and waits
-for a clean exit after `Shutdown`.
+`Command::Shutdown`. The cross-process test spawns `env!("CARGO_BIN_EXE_vmp")
+--daemon` with the four `VMP_*_DIR` env vars pointed at a temp root: it
+verifies the `daemon already running` refusal, sends state-changing commands,
+and waits for a clean exit after `Shutdown`.
 
 ## Self-skipping mpv tests
 

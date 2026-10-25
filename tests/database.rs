@@ -1,10 +1,10 @@
-use rmp::db::{Library, NewMedia, classify_uri};
-use rmp::proto::FAVORITE_TAG;
 use std::fs;
 use std::path::PathBuf;
+use vmp::db::{Library, NewMedia, classify_uri};
+use vmp::proto::FAVORITE_TAG;
 
 fn temp_db(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("rmp2-db-{}-{}", tag, std::process::id()));
+    let dir = std::env::temp_dir().join(format!("vmp-db-{}-{}", tag, std::process::id()));
     let _ = fs::create_dir_all(&dir);
     dir.join("library.sqlite3")
 }
@@ -149,7 +149,7 @@ fn playback_stats_fill_blanks_only_and_title_artist_fallbacks() {
 
 #[test]
 fn legacy_name_column_is_migrated_on_open() {
-    let dir = std::env::temp_dir().join(format!("rmp2-db-legacy-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("vmp-db-legacy-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let db = dir.join("library.sqlite3");
     let _ = fs::remove_file(&db);

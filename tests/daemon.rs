@@ -1,18 +1,18 @@
 mod common;
 
-use rmp::config::Config;
-use rmp::daemon::{Daemon, client::Connection};
-use rmp::error::Error;
-use rmp::proto::{Command, RepeatMode, Snapshot, Theme};
-use rmp::storage::Paths;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command as Process;
 use std::thread;
 use std::time::{Duration, Instant};
+use vmp::config::Config;
+use vmp::daemon::{Daemon, client::Connection};
+use vmp::error::Error;
+use vmp::proto::{Command, RepeatMode, Snapshot, Theme};
+use vmp::storage::Paths;
 
 fn temp_root(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("rmp2-daemon-{}-{}", tag, std::process::id()));
+    let dir = std::env::temp_dir().join(format!("vmp-daemon-{}-{}", tag, std::process::id()));
     let _ = fs::create_dir_all(&dir);
     dir
 }
@@ -62,13 +62,14 @@ fn media_id_by_title(snap: &Snapshot, title: &str) -> Option<i64> {
 fn daemon_serves_snapshots_and_shuts_down() {
     let root = temp_root("e2e");
     let paths = Paths::for_root(root.clone());
+    let sock = paths.sock.clone();
+    let state_path = paths.state.clone();
 
     let handle = thread::Builder::new()
         .name("daemon-e2e".into())
         .spawn(move || Daemon::serve(paths, Config::default()))
         .expect("spawn daemon thread");
 
-    let sock = root.join("rmp.sock");
     let conn = connect_retry(&sock);
 
     let snap = wait_snapshot(&conn, Duration::from_secs(2), |_| true);
@@ -150,7 +151,7 @@ fn daemon_serves_snapshots_and_shuts_down() {
         s.repeat == RepeatMode::All
     });
 
-    let persisted = fs::read_to_string(root.join("last-state.json")).unwrap();
+    let persisted = fs::read_to_string(state_path).unwrap();
     assert!(persisted.contains("\"theme\":\"light\""));
     assert!(persisted.contains("\"volume\":88"));
     assert!(persisted.contains("\"repeat\":\"All\""));
@@ -164,14 +165,18 @@ fn daemon_serves_snapshots_and_shuts_down() {
 #[test]
 fn foreign_live_pid_blocks_a_second_daemon() {
     let root = temp_root("cross");
-    let mut child = Process::new(env!("CARGO_BIN_EXE_rmp"))
+    let paths_for_env = Paths::for_root(root.clone());
+    let sock = paths_for_env.sock.clone();
+    let mut child = Process::new(env!("CARGO_BIN_EXE_vmp"))
         .arg("--daemon")
-        .env("RMP2_DIR", root.to_string_lossy().into_owned())
+        .env("VMP_CONFIG_DIR", &paths_for_env.config_dir)
+        .env("VMP_DATA_DIR", &paths_for_env.data_dir)
+        .env("VMP_STATE_DIR", &paths_for_env.state_dir)
+        .env("VMP_RUN_DIR", &paths_for_env.run_dir)
         .stdin(std::process::Stdio::null())
         .spawn()
-        .expect("spawn detached rmp daemon from the built binary");
+        .expect("spawn detached vmp daemon from the built binary");
 
-    let sock = root.join("rmp.sock");
     let conn = connect_retry(&sock);
 
     let res = Daemon::serve(Paths::for_root(root.clone()), Config::default());
@@ -202,6 +207,31 @@ fn foreign_live_pid_blocks_a_second_daemon() {
         thread::sleep(Duration::from_millis(10));
     }
     assert!(!sock.exists(), "subprocess daemon removed its socket");
-    assert!(!root.join("rmp.pid").exists());
+    assert!(!paths_for_env.pid.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn invalid_config_fails_fast_without_spawning_a_daemon() {
+    let root = temp_root("badcfg");
+    let dirs = Paths::for_root(root.clone());
+    fs::write(dirs.config, "vmp.opt.not_real = 1\n").unwrap();
+
+    let out = Process::new(env!("CARGO_BIN_EXE_vmp"))
+        .env("VMP_CONFIG_DIR", &dirs.config_dir)
+        .env("VMP_DATA_DIR", &dirs.data_dir)
+        .env("VMP_STATE_DIR", &dirs.state_dir)
+        .env("VMP_RUN_DIR", &dirs.run_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("run vmp with a broken init.lua");
+
+    assert_eq!(out.status.code(), Some(1), "config error exits nonzero");
+    let msg = String::from_utf8_lossy(&out.stderr);
+    assert!(msg.contains("invalid config:"), "{msg}");
+    assert!(msg.contains("not_real"), "{msg}");
+    assert!(!dirs.sock.exists(), "no daemon may be spawned");
     let _ = fs::remove_dir_all(root);
 }

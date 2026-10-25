@@ -5,6 +5,8 @@
 - Rust (edition 2024), pinned via `rust-toolchain.toml`
 - [mpv](https://mpv.io) at runtime (and `yt-dlp` for online streams)
 - Optional: mpv on PATH also enables the mpv integration tests
+- Lua is embedded (mlua, vendored Lua 5.4); no system lua needed to build or
+  run. Config is `init.lua` - see [docs/configuration.md](configuration.md).
 
 ## Common commands
 
@@ -15,7 +17,7 @@
 | `cargo clippy --all-targets -- -D warnings` | lint gate (CI fails on warnings)           |
 | `cargo test`                            | unit tests + integration suites                |
 | `cargo fmt` / `cargo fmt --all -- --check` | format / verify formatting                  |
-| `cargo build --release`                 | optimized binary at `target/release/rmp`       |
+| `cargo build --release`                 | optimized binary at `target/release/vmp`       |
 | `cargo bench`                           | run `benches/engine.rs` timings                |
 
 Wrappers:
@@ -28,7 +30,7 @@ sh scripts/test.sh    # cargo test + mpv integration notice + release build
 ## Layout conventions
 
 - The binary is thin: `src/main.rs` only parses argv, attaches/spawns the
-  daemon, loads config, and calls `rmp::ui::run`. Keep logic in the library so
+  daemon, loads config, and calls `vmp::ui::run`. Keep logic in the library so
   integration tests can exercise it (`src/lib.rs` declares the public modules).
 - Modules are directories with a `mod.rs` re-exporting sibling content
   (`daemon/`, `mpv/`, `db/`, `config/`, `ui/panes/`). Shared helpers live in
@@ -36,7 +38,7 @@ sh scripts/test.sh    # cargo test + mpv integration notice + release build
   files need an item, and the library surface stays minimal (pub only where
   tests or the binary need it).
 - `Paths::for_root(root)` is the seam that decouples daemon/UI code from the
-  real `~/.config/rmp2` directory; tests always build isolated roots.
+  real `~/.config/vmp` + XDG directories; tests always build isolated roots.
 
 ## Style rules
 
@@ -52,9 +54,10 @@ sh scripts/test.sh    # cargo test + mpv integration notice + release build
   socket, recovers a stale socket when the pid file no longer names a live
   process, and reports `daemon already running` for a live foreign daemon.
 - Behavior strings are load-bearing (tests and UX assert them verbatim):
-  `daemon already running`, `bind socket: {e}`, `rmp daemon: {e}`, `rmp: {e}`,
-  `failed to load media`, `unknown command: {cmd} (try ...)`. If you touch
-  them, update the tests that pin them.
+  `daemon already running`, `bind socket: {e}`, `vmp daemon: {e}`, `vmp: {e}`,
+  `failed to load media`, `unknown command: {cmd} (try ...)`. Config problems
+  all surface as `invalid config: ...` (including raw Lua errors). If you
+  touch them, update the tests that pin them.
 - Push semantics: snapshots are deduped against the previous snapshot and the
   event loop throttles position updates (~350ms); direct handler pushes
   (`handle_command`, mpv events) always go out immediately.

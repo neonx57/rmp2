@@ -1,16 +1,16 @@
 mod common;
 
 use common::{MPV_TEST_SECONDS, wav_bytes};
-use rmp::mpv::{Mpv, MpvMsg, live_info, probe_metadata};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+use vmp::mpv::{Mpv, MpvMsg, live_info, probe_metadata};
 
 fn temp_root() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("rmp2-mpv-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("vmp-mpv-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

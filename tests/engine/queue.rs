@@ -1,5 +1,5 @@
-use rmp::engine::{filter_queue, mini_pick, next_index};
-use rmp::proto::{MediaInfo, RepeatMode};
+use vmp::engine::{filter_queue, mini_pick, next_index};
+use vmp::proto::{MediaInfo, RepeatMode};
 
 fn media(id: i64) -> MediaInfo {
     MediaInfo {

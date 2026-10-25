@@ -347,7 +347,7 @@ pub fn confirm_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog) {
         Dialog::ConfirmExit => (
             " Quit ",
             vec![
-                Line::from("Quit and stop rmp? (y/n)"),
+                Line::from("Quit and stop vmp? (y/n)"),
                 Line::from(""),
                 Line::from("Shift+q detaches and keeps playing instead"),
             ],

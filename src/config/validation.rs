@@ -1,7 +1,6 @@
-use super::settings::Config;
 use crate::app::action::action_from_str;
 use crate::config::defaults::default_bindings;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 fn valid_plain_key(k: &str) -> bool {
     matches!(
@@ -43,40 +42,38 @@ pub(super) fn is_valid_key(k: &str) -> bool {
     false
 }
 
-impl Config {
-    pub fn parse(raw: &str) -> Result<Self, String> {
-        let mut cfg: Config =
-            toml::from_str(raw).map_err(|e| format!("config parse error: {e}"))?;
-        for (action, keys) in default_bindings() {
-            cfg.keybindings.entry(action).or_insert(keys);
+pub(super) fn merge_and_validate_bindings(
+    keybindings: &mut BTreeMap<String, Vec<String>>,
+) -> Result<(), String> {
+    for (action, keys) in default_bindings() {
+        keybindings.entry(action).or_insert(keys);
+    }
+    let mut errors = Vec::new();
+    let mut seen: HashMap<&str, &str> = HashMap::new();
+    for (action, keys) in keybindings.iter() {
+        if action_from_str(action).is_none() {
+            errors.push(format!("invalid action \"{action}\""));
+            continue;
         }
-        let mut errors = Vec::new();
-        let mut seen: HashMap<&str, &str> = HashMap::new();
-        for (action, keys) in &cfg.keybindings {
-            if action_from_str(action).is_none() {
-                errors.push(format!("invalid action \"{action}\""));
+        for k in keys {
+            if k == "none" {
                 continue;
             }
-            for k in keys {
-                if k == "none" {
-                    continue;
-                }
-                if !is_valid_key(k) {
-                    errors.push(format!("invalid key \"{k}\" for action \"{action}\""));
-                }
-                if let Some(prev) = seen.insert(k, action.as_str())
-                    && prev != action
-                {
-                    errors.push(format!(
-                        "key \"{k}\" bound to multiple actions (\"{prev}\", \"{action}\")"
-                    ));
-                }
+            if !is_valid_key(k) {
+                errors.push(format!("invalid key \"{k}\" for action \"{action}\""));
+            }
+            if let Some(prev) = seen.insert(k, action.as_str())
+                && prev != action
+            {
+                errors.push(format!(
+                    "key \"{k}\" bound to multiple actions (\"{prev}\", \"{action}\")"
+                ));
             }
         }
-        if errors.is_empty() {
-            Ok(cfg)
-        } else {
-            Err(format!("invalid config:\n{}", errors.join("\n")))
-        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("invalid config:\n{}", errors.join("\n")))
     }
 }

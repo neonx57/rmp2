@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an improvement to rmp
+about: Suggest an improvement to vmp
 title: ""
 labels: enhancement
 assignees: ""

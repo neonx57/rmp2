@@ -1,14 +1,14 @@
 # Contributing
 
-Thanks for improving rmp. This project is a small, opinionated Rust codebase
+Thanks for improving vmp. This project is a small, opinionated Rust codebase
 (master builds stay green: fmt, clippy `-D warnings`, tests).
 
 ## Getting started
 
 ```sh
-git clone https://github.com/your-fork/rmp2.git
-cd rmp2
-cargo test          # 58 unit tests + integration suites (mpv tests self-skip)
+git clone https://github.com/neonx57/vmp.git
+cd vmp
+cargo test          # unit tests + integration suites (mpv tests self-skip)
 sh scripts/check.sh # fmt --check + check + clippy -D warnings + test
 ```
 
@@ -51,9 +51,12 @@ Use `.github/PULL_REQUEST_TEMPLATE.md`. Keep PRs focused; run
 
 ## Planned direction: Lua plugins
 
-A core roadmap item: **users will be able to write rmp plugins in Lua.**
-There are no empty stub directories for it yet by design; the plan reserves
-these touch points:
+A core roadmap item: **users will be able to write vmp plugins in Lua.**
+The config system already ships Lua - `init.lua` with `vmp.opt`/`vmp.map` and
+`require()` over `~/.config/vmp/lua/` (embedded Lua 5.4, vendored, no system
+dependency) - so the plugin layer builds on an interpreter that is already
+there. There are no empty stub directories for it yet by design; the plan
+reserves these touch points:
 
 - New user commands will register alongside the builtins in `src/commands/`
   (`builtins.rs` for command discovery, `parser.rs` for line parsing). The
@@ -65,6 +68,6 @@ these touch points:
   `proto::Command` and `daemon/dispatcher.rs` rather than poking the SQLite
   library directly.
 
-Design discussion for a Lua changeset is required before implementation
-(incubator scripts first, no interpreter dependency landing until the plugin
-API settles).
+Design discussion for a plugin API changeset is required before
+implementation (incubator scripts first, the API settles before any plugin
+surface is frozen).

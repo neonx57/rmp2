@@ -5,10 +5,43 @@ project is pre-1.0 so minor bumps hold breaking changes.
 
 ## [Unreleased]
 
+### Removed / renamed
+- The project is renamed **rmp2 -> vmp**. Crate and binary are `vmp`
+  (`vmp`, `vmp --daemon`), error prefixes `vmp: {e}` / `vmp daemon: {e}`,
+  runtime files `vmp.sock` / `vmp.pid` / `vmp.log`, and the persisted state
+  file is now `session.json`.
+- Storage moves from one directory to an XDG layout (see below): config in
+  `~/.config/vmp/`, library in `~/.local/share/vmp/`, state in
+  `~/.local/state/vmp/`, sockets/pid in `$XDG_RUNTIME_DIR/vmp/`; each
+  overridable with `VMP_CONFIG_DIR` / `VMP_DATA_DIR` / `VMP_STATE_DIR` /
+  `VMP_RUN_DIR` (a spawned daemon inherits all four).
+
+### Changed (breaking)
+- Config is Lua, not TOML: nvim-style `~/.config/vmp/init.lua` created by the
+  user (missing file = defaults; vmp never generates it) with `vmp.opt.*` for
+  options/titles and `vmp.map.*` for keybindings; unknown options/actions and
+  wrong types are rejected like nvim, `"none"` still unbinds, bindings merge
+  over defaults, and `require()` resolves modules under
+  `~/.config/vmp/lua/`. Lua 5.4 is embedded through mlua (vendored; no system
+  lua dependency), the `toml` dependency is gone, and legacy config.toml
+  loading/migration is removed - migrate the library DB by hand (see
+  CONFIG.md).
+
+### Fixed
+- Pausing from the TUI no longer desyncs daemon/mpv state, and the status bar
+  gained a `playing`/`paused` indicator.
+- Daemon startup race: the pid file is written before the socket is
+  announced.
+- `enter_resume_loaded` resume path re-checks mpv liveness and falls back to
+  a normal play + notify when the daemon's mpv handle is gone.
+- A broken config now surfaces its full `invalid config:` message from the
+  TUI start-up before any daemon spawn (previously reported as
+  `daemon did not start`), and no daemon is left to spawn into failing
+  configs.
+
 ### Changed
 - Restructured the crate into a library + thin binary split (`src/lib.rs` +
-  slimmed `src/main.rs`) with zero behavior change; binary name stays `rmp`,
-  CLI (`rmp`, `rmp --daemon`) and config/DB schemas are untouched.
+  slimmed `src/main.rs`) with zero behavior change.
 - Domain modules became directories with `mod.rs` re-exports:
   - `daemon.rs` -> `daemon/{mod,server,client,dispatcher,snapshot,lifecycle}.rs`
     (`Daemon::run/serve` now return `Result<(), Error>`; `serve` takes explicit
@@ -16,8 +49,8 @@ project is pre-1.0 so minor bumps hold breaking changes.
     `spawn_daemon` are re-exported from `daemon`)
   - `mpv.rs` -> `mpv/{mod,process,ipc,events,commands,properties}.rs`
   - `db.rs` -> `db/{mod,connection,schema,migrations,queries}.rs`
-  - `config.rs` -> `config/{mod,settings,loader,validation,defaults}.rs`
-    (`Config::load` now returns `Result<Self, Error>`)
+  - `config.rs` -> `config/{mod,lua_host,settings,loader,validation,defaults}.rs`
+    (`Config::load` returns `Result<Self, Error>` and runs the Lua host)
   - `state.rs` -> `storage/{paths,state}.rs` (`Paths::for_root` test seam)
   - `ui/` -> `ui/{app,mod,input,layout,render,panes/{mod,filters,library,mini_queue,status}}.rs`
     (LineInput moved to `input.rs`, layout to `layout.rs`, the draw tree to
@@ -40,6 +73,8 @@ project is pre-1.0 so minor bumps hold breaking changes.
   configuration, protocol), CONTRIBUTING.md, SECURITY.md.
 - Development log routing moved to `logging.rs` without changing the log line
   format (`[epoch-ms] message`).
+- `enter_resume_loaded` config key (default `true`): `Enter` on the
+  already-loaded selected track resumes playback instead of reloading it.
 
 ### Fixed
 - Clippy gating surfaced two latent warnings (unused lifetime in

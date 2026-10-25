@@ -1,7 +1,7 @@
 use super::Daemon;
 use crate::error::Error;
 use crate::logging;
-use crate::storage::{Paths, config_dir};
+use crate::storage::Paths;
 use serde_json::json;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -14,9 +14,13 @@ use std::thread;
 
 pub fn spawn_daemon() -> Result<(), Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Daemon(e.to_string()))?;
+    let paths = Paths::resolve();
     let mut cmd = Command::new(exe);
     cmd.arg("--daemon")
-        .env("RMP2_DIR", config_dir())
+        .env("VMP_CONFIG_DIR", &paths.config_dir)
+        .env("VMP_DATA_DIR", &paths.data_dir)
+        .env("VMP_STATE_DIR", &paths.state_dir)
+        .env("VMP_RUN_DIR", &paths.run_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

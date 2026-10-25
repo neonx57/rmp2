@@ -1,6 +1,7 @@
 use crate::app::action::{ACTIONS, action_str};
+use std::collections::BTreeMap;
 
-pub fn default_bindings() -> std::collections::BTreeMap<String, Vec<String>> {
+pub fn default_bindings() -> BTreeMap<String, Vec<String>> {
     let pairs = [
         ("move_down", &["j", "down"][..]),
         ("move_up", &["k", "up"][..]),
@@ -39,52 +40,73 @@ pub fn default_bindings() -> std::collections::BTreeMap<String, Vec<String>> {
         .collect()
 }
 
-pub(super) fn binding_text(action: &str, keys: &[String]) -> String {
+fn is_lua_keyword(action: &str) -> bool {
+    matches!(
+        action,
+        "and"
+            | "break"
+            | "do"
+            | "else"
+            | "elseif"
+            | "end"
+            | "false"
+            | "for"
+            | "function"
+            | "goto"
+            | "if"
+            | "in"
+            | "local"
+            | "nil"
+            | "not"
+            | "or"
+            | "repeat"
+            | "return"
+            | "then"
+            | "true"
+            | "until"
+            | "while"
+    )
+}
+
+fn binding_text(action: &str, keys: &[String]) -> String {
+    let target = if is_lua_keyword(action) {
+        format!("vmp.map[\"{action}\"]")
+    } else {
+        format!("vmp.map.{action}")
+    };
     if keys.len() == 1 {
-        format!("{action} = \"{}\"\n", keys[0])
+        format!("{target} = \"{k}\"\n", k = keys[0])
     } else {
         let list = keys
             .iter()
             .map(|k| format!("\"{k}\""))
             .collect::<Vec<_>>()
             .join(", ");
-        format!("{action} = [{list}]\n")
+        format!("{target} = {{ {list} }}\n")
     }
 }
 
-pub fn default_config_text() -> String {
+pub fn default_init_lua() -> String {
     let mut out = String::new();
-    out.push_str("# rmp2 configuration\n");
+    out.push_str("-- vmp configuration\n");
+    out.push_str("-- Executed as Lua on startup. Everything here mirrors the entry text\n");
+    out.push_str("-- (options have these defaults already, so lines can be deleted).\n");
     out.push('\n');
-    out.push_str("# Keybindings map an action to a key or a list of keys.\n");
-    out.push_str("# Use \"none\" to disable a default binding (e.g. confirm_quit = \"none\").\n");
+    out.push_str("vmp.opt.mpv_binary = \"mpv\"\n");
+    out.push_str("vmp.opt.volume_step = 5\n");
+    out.push_str("vmp.opt.seek_step = 5.0\n");
+    out.push_str("vmp.opt.enter_resume_loaded = true\n");
     out.push('\n');
-    let actions: Vec<&str> = ACTIONS.iter().map(|(a, _)| action_str(*a)).collect();
-    out.push_str(&format!("# Actions: {}\n", actions.join(" ")));
-    out.push_str("# Keys: single characters (letters, digits, symbols), uppercase for shift,\n");
-    out.push_str("#       \"ctrl+<char>\" for control, \"f1\"..\"f12\", and the named keys\n");
-    out.push_str(
-        "#       \"space\" \"enter\" \"esc\" \"tab\" \"backtab\" \"up\" \"down\" \"left\"\n",
-    );
-    out.push_str(
-        "#       \"right\" \"home\" \"end\" \"pageup\" \"pagedown\" \"insert\" \"delete\"\n",
-    );
-    out.push_str("#       \"backspace\"\n");
+    out.push_str("vmp.opt.titles.filter = \"Filter\"\n");
+    out.push_str("vmp.opt.titles.queue = \"Queue\"\n");
+    out.push_str("vmp.opt.titles.mini = \"Mini Queue\"\n");
+    out.push_str("vmp.opt.titles.info = \"Info\"\n");
     out.push('\n');
-    out.push_str("mpv_binary = \"mpv\"\n");
-    out.push_str("volume_step = 5\n");
-    out.push_str("seek_step = 5.0\n");
-    out.push('\n');
-    out.push_str("# Section titles used in the pane borders.\n");
-    out.push_str("[titles]\n");
-    out.push_str("filter = \"Filter\"\n");
-    out.push_str("queue = \"Queue\"\n");
-    out.push_str("mini = \"Mini Queue\"\n");
-    out.push_str("info = \"Info\"\n");
-    out.push('\n');
-    out.push_str("[keybindings]\n");
     for (action, keys) in default_bindings() {
         out.push_str(&binding_text(&action, &keys));
     }
+    out.push('\n');
+    let actions: Vec<&str> = ACTIONS.iter().map(|(a, _)| action_str(*a)).collect();
+    out.push_str(&format!("-- Actions: {}\n", actions.join(" ")));
     out
 }

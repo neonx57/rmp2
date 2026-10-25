@@ -1,7 +1,7 @@
 use regex::Regex;
-use rmp::engine::{Lcg, filter_queue, next_index, search_blob};
-use rmp::proto::{MediaInfo, RepeatMode};
 use std::time::Instant;
+use vmp::engine::{Lcg, filter_queue, next_index, search_blob};
+use vmp::proto::{MediaInfo, RepeatMode};
 
 fn synthetic_library(count: usize) -> Vec<MediaInfo> {
     (0..count)

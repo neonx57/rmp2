@@ -2,7 +2,7 @@
 
 ## Project
 
-rmp - a simple Rust TUI media player. Backed by mpv (audio-only). Songs are
+vmp - a simple Rust TUI media player. Backed by mpv (audio-only). Songs are
 categorized by a tag system; checked tags define the play queue. Supports both
 offline files and online streams (mpv/yt-dlp handles the stream).
 
@@ -21,21 +21,23 @@ offline files and online streams (mpv/yt-dlp handles the stream).
 
 Single binary with two modes:
 
-- `rmp --daemon`: headless long-running server. Owns the mpv subprocess, the
+- `vmp --daemon`: headless long-running server. Owns the mpv subprocess, the
   SQLite library, and the queue/playback engine. Exposes a JSON protocol over a
-  Unix socket at `~/.config/rmp2/rmp.sock`. Survives TUI exit (background play).
-- `rmp` (default): spawns the daemon if absent, then runs the ratatui TUI. The
+  Unix socket at `$XDG_RUNTIME_DIR/vmp/vmp.sock`. Survives TUI exit (background
+  play).
+- `vmp` (default): spawns the daemon if absent, then runs the ratatui TUI. The
   TUI is a thin client: it forwards keybindings and renders daemon state
   snapshots. `Shift+q` detaches only; `q`/`esc` (after confirm) shuts the
   daemon down.
 
-Everything lives under `~/.config/rmp2`:
-- `config.toml` - user config (keybinds, paths, defaults)
-- `library.sqlite3` - media library DB
-- `rmp.sock` - daemon IPC socket
-- `rmp.pid` - daemon pid file
-- `last-state.json` - persisted volume/repeat/shuffle/active tags/theme
-- `rmp.log` - daemon log
+Storage follows XDG:
+- `~/.config/vmp/` - `init.lua` (user config; never generated), `lua/` modules
+- `~/.local/share/vmp/` - `library.sqlite3` (media library DB)
+- `~/.local/state/vmp/` - `session.json` (persisted volume/repeat/shuffle/active tags/theme), `vmp.log` (daemon log)
+- `$XDG_RUNTIME_DIR/vmp/` - `vmp.sock` (daemon IPC), `vmp.pid` (pid file), `mpv.sock`, probe sockets
+
+`VMP_CONFIG_DIR` / `VMP_DATA_DIR` / `VMP_STATE_DIR` / `VMP_RUN_DIR` override
+each directory; a spawned daemon inherits all four.
 
 ## Module layout
 
@@ -43,13 +45,14 @@ Library + thin binary split (`src/lib.rs` declares the public modules;
 `src/main.rs` is argv/wiring only). Module directories put shared types in
 `mod.rs` and re-export siblings:
 
-- `src/lib.rs` - module roots; binary consumes `rmp::`
+- `src/lib.rs` - module roots; binary consumes `vmp::`
 - `src/main.rs` - entry, argument handling, daemon spawn/attach
 - `src/error.rs`, `src/logging.rs` - shared error enum, epoch-ms/file logging
 - `src/app/action.rs` - Action enum, name/group/label tables
 - `src/commands/` - ex-command parser (`:` mode) and builtins list
-- `src/config/` - settings/mod+loader+validation+defaults for config.toml
-- `src/storage/` - paths (incl. `Paths::for_root` test seam), last-state
+- `src/config/` - lua_host (embedded Lua 5.4, `vmp.opt`/`vmp.map` harvest),
+  settings, loader, validation, defaults
+- `src/storage/` - XDG paths (incl. `Paths::for_root` test seam), session state
 - `src/db/` - SQLite schema, migrations, queries (rusqlite bundled)
 - `src/engine.rs` - pure queue/tag filtering, repeat/shuffle, `Lcg`
 - `src/daemon/` - mod (Daemon struct, run/serve/event loop), server, client
@@ -64,12 +67,22 @@ Library + thin binary split (`src/lib.rs` declares the public modules;
 - `benches/engine.rs` - std-clock queue engine bench
 - `tests/` - integration suites (see Testing)
 
+## Config system
+
+Config is an nvim-style Lua script, not TOML. `Config::load(&paths.config,
+&paths.lua_dir())` boots embedded Lua 5.4 (mlua vendored), installs `vmp.opt`
+and `vmp.map` with validating metatables, seeds defaults, runs `init.lua`,
+then harvests; every failure (syntax, runtime, type, unknown name) surfaces as
+`invalid config: ...`. Missing `init.lua` = defaults, no file is written.
+`require()` resolves under `~/.config/vmp/lua/`. Lua keywords need bracket
+syntax (`vmp.map["repeat"]`).
+
 ## Lua plugins (planned)
 
-Users will write plugins in Lua. No stub directories exist yet by design;
-the reserved integration points are `src/commands/` (registration of new
-ex-commands next to builtins) and the daemon dispatcher path. See
-CONTRIBUTING.md for the design expectations.
+The config system already runs Lua; a fuller user plugin API comes later.
+No stub directories exist yet by design; the reserved integration points are
+`src/commands/` (registration of new ex-commands next to builtins) and the
+daemon dispatcher path. See CONTRIBUTING.md for the design expectations.
 
 ## Conventions
 
@@ -90,17 +103,20 @@ CONTRIBUTING.md for the design expectations.
 - `/` search applies a regex over a precomposed lowercase searchable blob
   (title + artist + uri + tags).
 - `f` toggles the reserved `favorite` tag.
+- `Enter` plays the selected track; on the already-loaded track it resumes
+  instead of reloading (default on; `vmp.opt.enter_resume_loaded` in
+  init.lua; when the mpv handle is gone it falls back to a normal play).
 - `:` opens Vim-style command mode: `:q` quits and stops the daemon,
   `:checkhealth` lists `mpv`/`yt-dlp` status in a dialog.
 - `f10` opens the settings dialog (colorscheme dark/light, transparency on/off);
-  choices live in daemon state and `last-state.json`, not config.toml.
+  choices live in daemon state and `session.json`, not init.lua.
 
 ## Testing
 
 Keep queue/tag filtering, repeat/shuffle state machine, and protocol
 serialization pure so they are unit-testable; unit tests sit next to the code.
-Integration suites under `tests/`: engine, protocol, config, storage,
-database, daemon (real socket e2e via `Daemon::serve` on temp paths; the
-cross-process test uses the built binary), and `mpv_integration`
-(self-skips when mpv is missing). Shared fixtures live in
-`tests/common/mod.rs`. TUI rendering is not unit-tested.
+Integration suites under `tests/`: engine, protocol, config (Lua host
+behavior), storage (XDG paths + env overrides), database, daemon (real socket
+e2e via `Daemon::serve` on temp paths; the cross-process test uses the built
+`vmp` binary), and `mpv_integration` (self-skips when mpv is missing). Shared
+fixtures live in `tests/common/mod.rs`. TUI rendering is not unit-tested.

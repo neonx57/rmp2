@@ -1,6 +1,6 @@
-use rmp::engine::{Lcg, filter_queue, next_index};
-use rmp::proto::{MediaInfo, RepeatMode};
 use std::collections::HashSet;
+use vmp::engine::{Lcg, filter_queue, next_index};
+use vmp::proto::{MediaInfo, RepeatMode};
 
 fn media(id: i64, tags: &[&str]) -> MediaInfo {
     MediaInfo {
