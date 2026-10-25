@@ -482,15 +482,15 @@ fn help_column(
             format!(" {group}"),
             Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
         )));
-        for (action, name) in crate::config::ACTIONS {
-            if crate::config::action_group(*action) != *group {
+        for (action, name) in crate::app::action::ACTIONS {
+            if crate::app::action::action_group(*action) != *group {
                 continue;
             }
             if keys.get(*name).is_none() {
                 continue;
             }
             let bound = keys.get(*name).map(|ks| ks.join("/")).unwrap_or_default();
-            let label = crate::config::action_label(*action);
+            let label = crate::app::action::action_label(*action);
             lines.push(Line::from(format!("  {label:<18} {bound}")));
         }
         lines.push(Line::from(""));

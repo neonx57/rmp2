@@ -1,8 +1,106 @@
-use crate::config::{Config, action_from_str};
+pub use crate::app::action::Action;
+use crate::app::action::action_from_str;
+use crate::config::Config;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::collections::HashMap;
 
-pub use crate::config::Action;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LineOutcome {
+    Done,
+    Cancel,
+    None,
+}
+
+pub(super) struct LineInput {
+    pub(super) text: String,
+    pub(super) cursor: usize,
+}
+
+impl LineInput {
+    pub(super) fn new() -> Self {
+        LineInput {
+            text: String::new(),
+            cursor: 0,
+        }
+    }
+
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> LineOutcome {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            return LineOutcome::None;
+        }
+        match key.code {
+            KeyCode::Esc => LineOutcome::Cancel,
+            KeyCode::Enter => LineOutcome::Done,
+            KeyCode::Backspace => {
+                if let Some(prev) = self.prev_boundary() {
+                    self.text.remove(prev);
+                    self.cursor = prev;
+                }
+                LineOutcome::None
+            }
+            KeyCode::Delete => {
+                if self.cursor < self.text.len() {
+                    self.text.remove(self.cursor);
+                }
+                LineOutcome::None
+            }
+            KeyCode::Left => {
+                if let Some(prev) = self.prev_boundary() {
+                    self.cursor = prev;
+                }
+                LineOutcome::None
+            }
+            KeyCode::Right => {
+                if self.cursor < self.text.len() {
+                    self.cursor = self.next_boundary();
+                }
+                LineOutcome::None
+            }
+            KeyCode::Home => {
+                self.cursor = 0;
+                LineOutcome::None
+            }
+            KeyCode::End => {
+                self.cursor = self.text.len();
+                LineOutcome::None
+            }
+            KeyCode::Char(c) => {
+                self.text.insert(self.cursor, c);
+                self.cursor += c.len_utf8();
+                LineOutcome::None
+            }
+            _ => LineOutcome::None,
+        }
+    }
+
+    fn prev_boundary(&self) -> Option<usize> {
+        if self.cursor == 0 {
+            return None;
+        }
+        self.text
+            .char_indices()
+            .take_while(|(i, _)| *i < self.cursor)
+            .last()
+            .map(|(i, _)| i)
+    }
+
+    fn next_boundary(&self) -> usize {
+        self.text
+            .char_indices()
+            .find(|(i, _)| *i > self.cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.text.len())
+    }
+
+    pub(super) fn pattern(&self) -> Option<String> {
+        let t = self.text.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    }
+}
 
 pub struct Keymap {
     map: HashMap<String, Action>,
@@ -183,5 +281,67 @@ mod tests {
             km.resolve(press(KC::Char(':'), KeyModifiers::SHIFT)),
             Some(Action::Command)
         );
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    use super::*;
+    use crossterm::event::KeyCode;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn searching_accumulates_text_and_live_pattern() {
+        let mut sb = LineInput::new();
+        assert_eq!(sb.pattern(), None);
+        for c in "beat".chars() {
+            assert_eq!(sb.handle_key(key(KeyCode::Char(c))), LineOutcome::None);
+        }
+        assert_eq!(sb.pattern(), Some("beat".to_string()));
+        assert_eq!(sb.handle_key(key(KeyCode::Esc)), LineOutcome::Cancel);
+    }
+
+    #[test]
+    fn search_backspace_and_enter() {
+        let mut sb = LineInput::new();
+        for c in "abc".chars() {
+            sb.handle_key(key(KeyCode::Char(c)));
+        }
+        sb.handle_key(key(KeyCode::Backspace));
+        assert_eq!(sb.text, "ab");
+        assert_eq!(sb.handle_key(key(KeyCode::Enter)), LineOutcome::Done);
+    }
+
+    #[test]
+    fn search_empty_or_whitespace_is_no_pattern() {
+        let mut sb = LineInput::new();
+        assert_eq!(sb.pattern(), None);
+        sb.handle_key(key(KeyCode::Char(' ')));
+        sb.handle_key(key(KeyCode::Char(' ')));
+        assert_eq!(sb.pattern(), None);
+    }
+
+    #[test]
+    fn line_input_keeps_cursor_on_char_boundaries() {
+        let mut input = LineInput::new();
+        for c in "caf\u{e9}".chars() {
+            input.handle_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(input.text, "caf\u{e9}");
+        assert_eq!(input.cursor, input.text.len());
+        input.handle_key(key(KeyCode::Left));
+        assert_eq!(input.cursor, 3);
+        assert!(input.text.is_char_boundary(input.cursor));
+        input.handle_key(key(KeyCode::Right));
+        assert_eq!(input.cursor, input.text.len());
+        input.handle_key(key(KeyCode::Backspace));
+        assert_eq!(input.text, "caf");
+        assert_eq!(input.cursor, 3);
+        input.handle_key(key(KeyCode::Char('\u{e9}')));
+        assert_eq!(input.text, "caf\u{e9}");
+        assert!(input.text.is_char_boundary(input.cursor));
     }
 }

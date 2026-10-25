@@ -1,0 +1,13 @@
+# Local cargo conventions for rmp.
+#
+# - Rust toolchain is pinned by rust-toolchain.toml; no extra targets or
+#   features are needed.
+# - Clippy is a hard gate in CI and scripts/check.sh: --all-targets with
+#   -D warnings.
+# - Tests: `cargo test` covers the crate's unit tests plus the tests/
+#   integration suites; tests/mpv_integration.rs self-skips when mpv is
+#   missing.
+# - The bench harness is disabled (harness = false); `cargo bench` runs the
+#   std-clock timings in benches/engine.rs directly.
+# - No incremental builds config here: default cargo behavior is expected both
+#   locally and in CI.

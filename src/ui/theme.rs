@@ -54,13 +54,14 @@ pub fn settings_options() -> Vec<(&'static str, Vec<&'static str>)> {
     ]
 }
 
+#[derive(Default)]
 pub struct SettingsState {
     pub cursor: usize,
 }
 
 impl SettingsState {
     pub fn new() -> Self {
-        SettingsState { cursor: 0 }
+        SettingsState::default()
     }
 
     pub fn move_cursor(&mut self, delta: i64) {

@@ -13,6 +13,9 @@ offline files and online streams (mpv/yt-dlp handles the stream).
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Test: `cargo test`
 - Format: `cargo fmt --check` (format with `cargo fmt`)
+- Bench: `cargo bench` (runs `benches/engine.rs`, no bench harness)
+- Full local gate: `sh scripts/check.sh`; `sh scripts/test.sh` for
+  test + release build
 
 ## Architecture
 
@@ -36,17 +39,37 @@ Everything lives under `~/.config/rmp2`:
 
 ## Module layout
 
+Library + thin binary split (`src/lib.rs` declares the public modules;
+`src/main.rs` is argv/wiring only). Module directories put shared types in
+`mod.rs` and re-export siblings:
+
+- `src/lib.rs` - module roots; binary consumes `rmp::`
 - `src/main.rs` - entry, argument handling, daemon spawn/attach
-- `src/daemon.rs` - socket server, playback + queue engine, mpv lifecycle
-- `src/config.rs` - config dir paths, config.toml parsing/defaults
-- `src/db.rs` - SQLite schema + queries (rusqlite bundled)
-- `src/mpv.rs` - mpv subprocess + JSON-RPC IPC client
+- `src/error.rs`, `src/logging.rs` - shared error enum, epoch-ms/file logging
+- `src/app/action.rs` - Action enum, name/group/label tables
+- `src/commands/` - ex-command parser (`:` mode) and builtins list
+- `src/config/` - settings/mod+loader+validation+defaults for config.toml
+- `src/storage/` - paths (incl. `Paths::for_root` test seam), last-state
+- `src/db/` - SQLite schema, migrations, queries (rusqlite bundled)
+- `src/engine.rs` - pure queue/tag filtering, repeat/shuffle, `Lcg`
+- `src/daemon/` - mod (Daemon struct, run/serve/event loop), server, client
+  (`Connection`, TUI side), dispatcher, snapshot, lifecycle
+- `src/mpv/` - process spawn/drop, ipc request/reply, events, commands,
+  properties (metadata from mpv)
 - `src/proto.rs` - JSON protocol messages shared by daemon and TUI
-- `src/state.rs` - persisted last-state
-- `src/ui/mod.rs` - ratatui app shell
-- `src/ui/keymap.rs` - configurable keybindings -> actions
-- `src/ui/panes.rs` - Filter / Queue / State panes + status bar
-- `src/ui/dialog.rs` - modal overlays (add/edit/search/confirm)
+- `src/health.rs` - `:checkhealth` dependency probes
+- `src/ui/` - mod (re-exports), app (state machine + run), input (Keymap +
+  LineInput), layout (grid), render (draw tree), panes/{filters,library,
+  mini_queue,status}, dialog.rs, theme.rs
+- `benches/engine.rs` - std-clock queue engine bench
+- `tests/` - integration suites (see Testing)
+
+## Lua plugins (planned)
+
+Users will write plugins in Lua. No stub directories exist yet by design;
+the reserved integration points are `src/commands/` (registration of new
+ex-commands next to builtins) and the daemon dispatcher path. See
+CONTRIBUTING.md for the design expectations.
 
 ## Conventions
 
@@ -75,4 +98,9 @@ Everything lives under `~/.config/rmp2`:
 ## Testing
 
 Keep queue/tag filtering, repeat/shuffle state machine, and protocol
-serialization pure so they are unit-testable. TUI and mpv are not unit-tested.
+serialization pure so they are unit-testable; unit tests sit next to the code.
+Integration suites under `tests/`: engine, protocol, config, storage,
+database, daemon (real socket e2e via `Daemon::serve` on temp paths; the
+cross-process test uses the built binary), and `mpv_integration`
+(self-skips when mpv is missing). Shared fixtures live in
+`tests/common/mod.rs`. TUI rendering is not unit-tested.

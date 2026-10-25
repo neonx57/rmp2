@@ -98,6 +98,10 @@ impl Lcg {
             .unwrap_or(1)
             | 1)
     }
+
+    pub fn seeded(seed: u64) -> Self {
+        Lcg(seed | 1)
+    }
     pub fn next(&mut self, n: usize) -> usize {
         if n <= 1 {
             return 0;

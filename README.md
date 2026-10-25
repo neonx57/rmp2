@@ -119,16 +119,23 @@ confirmed `q`/`esc` shuts the daemon down.
 
 Source layout:
 
-| Path                | Responsibility                                        |
-| ------------------- | ----------------------------------------------------- |
-| `src/daemon.rs`     | Socket server, queue/playback engine, mpv lifecycle   |
-| `src/mpv.rs`        | mpv subprocess + JSON-RPC IPC client                  |
-| `src/db.rs`         | SQLite schema + queries (rusqlite bundled)            |
-| `src/engine.rs`     | Pure queue/tag filtering and repeat/shuffle logic     |
-| `src/proto.rs`      | JSON protocol messages shared by daemon and TUI       |
-| `src/ui/`           | ratatui app shell, keymap + configurable bindings     |
-| `src/config.rs`     | Config parsing, defaults, key/action validation       |
-| `src/state.rs`      | Persisted last-state (volume/repeat/shuffle/tags)     |
+| Path                  | Responsibility                                        |
+| --------------------- | ------------------------------------------------------ |
+| `src/daemon/`         | Socket server, queue/playback engine, mpv lifecycle    |
+| `src/mpv/`            | mpv subprocess + JSON-RPC IPC client                   |
+| `src/db/`             | SQLite schema + queries (rusqlite bundled)             |
+| `src/engine.rs`       | Pure queue/tag filtering and repeat/shuffle logic      |
+| `src/proto.rs`        | JSON protocol messages shared by daemon and TUI        |
+| `src/ui/`             | ratatui app shell, input/keymap, panes, dialogs        |
+| `src/config/`         | Config parsing, defaults, key/action validation        |
+| `src/storage/`        | Persisted last-state and runtime paths                 |
+| `src/commands/`       | Vim-style `:` command parsing                          |
+| `src/app/action.rs`   | Action enum and name/group tables                      |
+
+Deeper documentation: [docs/architecture.md](docs/architecture.md) (module map
+and invariants), [docs/development.md](docs/development.md),
+[docs/testing.md](docs/testing.md), [docs/protocol.md](docs/protocol.md),
+[docs/configuration.md](docs/configuration.md).
 
 Crates:
 
@@ -151,5 +158,9 @@ commented default `config.toml` is also generated on first run.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major
-changes, please open an issue first to discuss what you would like to change.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for
+project rules (style, testing expectations, and the planned Lua plugin
+direction) and `docs/` for architecture details. For major changes, please
+open an issue first to discuss what you would like to change. Security issues
+follow [SECURITY.md](SECURITY.md). Development quickstart: `sh
+scripts/check.sh` runs the full local gate (fmt, clippy, tests).

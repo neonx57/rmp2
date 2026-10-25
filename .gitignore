@@ -19,6 +19,19 @@ rmp.pid
 mpv.sock
 rmp.log
 
+# agentic tooling (local only, never commit)
+.skills/
+.opencode/
+opencode.json
+opencode.jsonc
+.claude/
+CLAUDE.md
+.codex/
+.pi/
+.antigravity/
+.agent/
+GEMINI.md
+
 # Added by cargo
 
 /target
