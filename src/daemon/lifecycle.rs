@@ -1,7 +1,7 @@
 use super::Daemon;
 use crate::error::Error;
 use crate::logging;
-use crate::storage::config_dir;
+use crate::storage::{Paths, config_dir};
 use serde_json::json;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -36,6 +36,10 @@ pub(super) fn pid_alive(pid_path: &Path) -> bool {
     Path::new(&format!("/proc/{pid}")).exists() && pid != std::process::id()
 }
 
+pub(super) fn write_pid(paths: &Paths) {
+    let _ = fs::write(&paths.pid, std::process::id().to_string());
+}
+
 impl Daemon {
     pub(super) fn install_signals(&self) {
         let flag = self.stop_flag.clone();
@@ -45,10 +49,6 @@ impl Daemon {
                 flag.store(true, Ordering::SeqCst);
             }
         });
-    }
-
-    pub(super) fn write_pid(&self) {
-        let _ = fs::write(&self.paths.pid, std::process::id().to_string());
     }
 
     pub(super) fn log(&self, msg: &str) {

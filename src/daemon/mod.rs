@@ -94,9 +94,9 @@ impl Daemon {
         listener
             .set_nonblocking(true)
             .map_err(|e| Error::Daemon(e.to_string()))?;
+        lifecycle::write_pid(&paths);
         let last = state::load(&paths.state);
         let mut daemon = Daemon::new(paths, cfg, listener, last);
-        daemon.write_pid();
         daemon.log("daemon started");
         daemon.event_loop();
         daemon.log("daemon stopped");
@@ -283,6 +283,7 @@ impl Daemon {
         };
         match mpv.loadfile(&info.uri) {
             Ok(()) => {
+                let _ = mpv.set_pause(false);
                 self.now_id = Some(id);
                 self.selected = Some(id);
                 self.position = 0.0;

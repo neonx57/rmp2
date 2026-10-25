@@ -133,6 +133,9 @@ impl Daemon {
             }
             let _ = self.lib.update_playback_stats(id, duration, bitrate);
         }
+        if let Some(m) = self.mpv.as_mut() {
+            let _ = m.set_pause(self.paused);
+        }
         self.loading = false;
         self.paused_for_cache = false;
         self.media_dirty = true;

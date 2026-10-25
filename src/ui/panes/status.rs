@@ -201,12 +201,30 @@ pub fn status_bar(
             .map(display_name)
             .unwrap_or_else(|| "unknown".into());
         let dur = n.duration.unwrap_or(0.0);
+        let (state_word, state_style) = if n.loading {
+            (
+                "loading",
+                Style::default().fg(p.warn).add_modifier(Modifier::BOLD),
+            )
+        } else if n.paused {
+            (
+                "paused",
+                Style::default().fg(p.muted).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            (
+                "playing",
+                Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
+            )
+        };
+        left.push(Span::styled(state_word, state_style));
+        left.push(Span::raw(" "));
         left.push(Span::styled(
             format!("{} /", fmt_time(n.position)),
             bold_style,
         ));
         left.push(Span::styled(format!(" {} ", fmt_time(dur)), text_style));
-        let w = area.width.saturating_sub(46) as usize;
+        let w = area.width.saturating_sub(56) as usize;
         let bar = match anim {
             Some(t) => loading_bar(t, w.min(20)),
             None => progress_bar(n.position, dur, w.min(20)),
