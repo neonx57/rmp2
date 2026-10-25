@@ -179,5 +179,9 @@ mod tests {
             km.resolve(press(KC::Char(' '), KeyModifiers::NONE)),
             Some(Action::Toggle)
         );
+        assert_eq!(
+            km.resolve(press(KC::Char(':'), KeyModifiers::SHIFT)),
+            Some(Action::Command)
+        );
     }
 }

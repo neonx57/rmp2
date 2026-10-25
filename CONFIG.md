@@ -93,6 +93,7 @@ confirm_quit = ["q", "esc"]
 detach      = "Q"
 settings    = "f10"
 help        = "?"
+command     = ":"
 ```
 
 ## Top-level options
@@ -116,6 +117,21 @@ dialog. It has two options:
 Changes apply immediately, broadcast to every connected client, and are
 persisted in `last-state.json` so they survive daemon restarts. Navigate with
 `up`/`down`, change a value with `left`/`right` or `enter`, close with `esc`.
+
+## Commands
+
+Press `:` (rebindable via the `command` action) to open the command line at the
+bottom of the screen. `Esc` cancels without running anything.
+
+| Command        | Action                                                      |
+| -------------- | ----------------------------------------------------------- |
+| `q`, `quit`    | Quit the app and stop the daemon                            |
+| `checkhealth`  | List dependencies (`mpv`, `yt-dlp`) and report their status |
+
+`checkhealth` runs `mpv --version` (using `mpv_binary`) and `yt-dlp --version`.
+`mpv` is required; a missing `yt-dlp` is reported as a warning because it is
+only needed for online streams. Unknown commands are reported in the status
+line.
 
 ## `[titles]`
 
@@ -193,6 +209,7 @@ Named keys: `space`, `enter`, `esc`, `tab`, `backtab`, `up`, `down`, `left`,
 | `detach`          | Detach the TUI; playback continues in the daemon          |
 | `settings`        | Open the settings dialog (colorscheme, transparency)      |
 | `help`            | Open the keybindings help dialog                          |
+| `command`         | Open the Vim-style command line                           |
 
 ## Default keybindings
 
@@ -229,3 +246,4 @@ If a section is missing entirely from `config.toml`, these defaults apply:
 | `detach`           | `Q`                     |
 | `settings`         | `f10`                   |
 | `help`             | `?`                     |
+| `command`          | `:`                     |

@@ -67,6 +67,8 @@ Everything lives under `~/.config/rmp2`:
 - `/` search applies a regex over a precomposed lowercase searchable blob
   (title + artist + uri + tags).
 - `f` toggles the reserved `favorite` tag.
+- `:` opens Vim-style command mode: `:q` quits and stops the daemon,
+  `:checkhealth` lists `mpv`/`yt-dlp` status in a dialog.
 - `f10` opens the settings dialog (colorscheme dark/light, transparency on/off);
   choices live in daemon state and `last-state.json`, not config.toml.
 

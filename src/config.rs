@@ -75,6 +75,7 @@ pub enum Action {
     Detach,
     Settings,
     Help,
+    Command,
 }
 
 pub const ACTIONS: &[(Action, &str)] = &[
@@ -107,6 +108,7 @@ pub const ACTIONS: &[(Action, &str)] = &[
     (Action::Detach, "detach"),
     (Action::Settings, "settings"),
     (Action::Help, "help"),
+    (Action::Command, "command"),
 ];
 
 pub fn action_from_str(name: &str) -> Option<Action> {
@@ -147,7 +149,11 @@ pub fn action_group(action: Action) -> &'static str {
         Action::AddMini | Action::FocusMini | Action::MiniMoveUp | Action::MiniMoveDown => {
             "Mini Queue"
         }
-        Action::ConfirmQuit | Action::Detach | Action::Settings | Action::Help => "App",
+        Action::ConfirmQuit
+        | Action::Detach
+        | Action::Settings
+        | Action::Help
+        | Action::Command => "App",
     }
 }
 
@@ -258,6 +264,7 @@ pub fn default_bindings() -> BTreeMap<String, Vec<String>> {
         ("detach", &["Q"][..]),
         ("settings", &["f10"][..]),
         ("help", &["?"][..]),
+        ("command", &[":"][..]),
     ];
     pairs
         .iter()

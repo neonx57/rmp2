@@ -2,6 +2,7 @@ mod config;
 mod daemon;
 mod db;
 mod engine;
+mod health;
 mod mpv;
 mod proto;
 mod state;

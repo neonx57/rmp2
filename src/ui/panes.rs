@@ -345,18 +345,7 @@ pub fn search_bar(
     invalid: bool,
     p: Palette,
 ) {
-    let text_style = Style::default().fg(p.text);
-    let cursor_style = Style::default().fg(p.warn).add_modifier(Modifier::REVERSED);
-    let mut spans: Vec<Span> = Vec::new();
-    let prompt = Span::styled(
-        "/",
-        Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
-    );
-    spans.push(prompt);
-    let cur = cursor.min(text.len());
-    spans.push(Span::styled(text[..cur].to_string(), text_style));
-    spans.push(Span::styled(" ", cursor_style));
-    spans.push(Span::styled(text[cur..].to_string(), text_style));
+    let mut spans = input_spans("/", text, cursor, p);
     let counter = if invalid {
         Span::styled("0/0", Style::default().fg(p.warn))
     } else {
@@ -370,6 +359,31 @@ pub fn search_bar(
     let bareg = p.pane_bg.unwrap_or(Color::White);
     let para = Paragraph::new(Line::from(spans)).style(Style::default().bg(bareg));
     frame.render_widget(para, area);
+}
+
+pub fn command_bar(frame: &mut Frame, area: Rect, text: &str, cursor: usize, p: Palette) {
+    let mut spans = input_spans(":", text, cursor, p);
+    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let gap = area.width.saturating_sub(used as u16) as usize;
+    spans.push(Span::raw(" ".repeat(gap)));
+    let bareg = p.pane_bg.unwrap_or(Color::White);
+    let para = Paragraph::new(Line::from(spans)).style(Style::default().bg(bareg));
+    frame.render_widget(para, area);
+}
+
+fn input_spans(prompt: &str, text: &str, cursor: usize, p: Palette) -> Vec<Span<'static>> {
+    let text_style = Style::default().fg(p.text);
+    let cursor_style = Style::default().fg(p.warn).add_modifier(Modifier::REVERSED);
+    let mut spans: Vec<Span> = Vec::new();
+    spans.push(Span::styled(
+        prompt.to_string(),
+        Style::default().fg(p.accent).add_modifier(Modifier::BOLD),
+    ));
+    let cur = cursor.min(text.len());
+    spans.push(Span::styled(text[..cur].to_string(), text_style));
+    spans.push(Span::styled(" ", cursor_style));
+    spans.push(Span::styled(text[cur..].to_string(), text_style));
+    spans
 }
 
 pub struct StatusBarHits {

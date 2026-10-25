@@ -35,6 +35,7 @@ define the play queue. Plays local files and online streams alike.
 - Settings dialog (`f10`): dark/light colorscheme and transparency, persisted
   across restarts.
 - Metadata pulled straight from mpv properties - no metadata crate.
+- Vim-style command mode: press `:` for commands like `:q` and `:checkhealth`.
 
 ## Getting Started
 
@@ -91,6 +92,16 @@ and Info (details). `Tab` / `h` / `l` move focus between them.
 | `Shift+q`     | Detach; playback continues in the daemon      |
 | `f10`         | Settings: colorscheme (dark/light), transparency |
 | `?`           | Help: show all keybindings grouped by category   |
+| `:`           | Enter command mode (see below)                   |
+
+### Commands
+
+Press `:` to open the command line at the bottom of the screen. `Esc` cancels.
+
+| Command       | Action                                                       |
+| ------------- | ------------------------------------------------------------ |
+| `:q`, `:quit` | Quit the app and stop the daemon                             |
+| `:checkhealth`| List dependencies (`mpv`, `yt-dlp`) and report their status  |
 
 The daemon is a separate headless process that owns playback, the library, and
 the queue. It starts automatically on first `rmp` launch and lives at

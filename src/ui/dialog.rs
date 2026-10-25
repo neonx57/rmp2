@@ -1,3 +1,4 @@
+use crate::health::{HealthEntry, Status};
 use crate::proto::MediaInfo;
 use crate::ui::panes::ASCII_BORDER;
 use crate::ui::theme::{Palette, settings_options, value_style};
@@ -498,6 +499,61 @@ fn help_column(
         lines.pop();
     }
     lines
+}
+
+pub fn health_dialog(frame: &mut Frame, area: Rect, entries: &[HealthEntry], p: Palette) {
+    let width = area.width.saturating_sub(4).clamp(48, 78);
+    let height = area.height.saturating_sub(4).clamp(6, 24);
+    let rect = centered(area, width, height);
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDER)
+        .title(" Checkhealth ")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(p.accent));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            format!(" {:<12}{:<7}detail", "dependency", "status"),
+            Style::default().fg(p.muted).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "-".repeat(inner.width as usize),
+            Style::default().fg(p.muted),
+        )),
+    ];
+    for e in entries {
+        let status_style = match e.status {
+            Status::Ok => Style::default().fg(p.now_playing),
+            Status::Warn => Style::default().fg(p.warn),
+            Status::Fail => Style::default().fg(Color::Red),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!(" {:<12}", e.name),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:<7}", e.status.label()),
+                status_style.add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(e.detail.clone(), Style::default().fg(p.text)),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " enter/esc close",
+        Style::default().fg(p.muted),
+    )));
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::default()),
+        inner,
+    );
 }
 
 pub fn error_dialog(frame: &mut Frame, area: Rect, text: &str, p: Palette) {

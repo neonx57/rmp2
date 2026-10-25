@@ -4,13 +4,15 @@ pub mod panes;
 pub mod theme;
 
 use crate::config::Config;
+use crate::health::{self, HealthEntry};
 use crate::proto::{Command, Snapshot, Theme};
 use crate::ui::dialog::{
-    Dialog, DialogOutcome, FormCommand, error_dialog, help_dialog, settings_dialog,
+    Dialog, DialogOutcome, FormCommand, error_dialog, health_dialog, help_dialog, settings_dialog,
 };
 use crate::ui::keymap::{Action, Keymap};
 use crate::ui::panes::{
-    Section, filter_pane, mini_pane, queue_pane, scroll_offset, search_bar, state_pane, status_bar,
+    Section, command_bar, filter_pane, mini_pane, queue_pane, scroll_offset, search_bar,
+    state_pane, status_bar,
 };
 use crate::ui::theme::{SettingsState, cursor_next, palette, settings_options};
 use crossterm::event::{
@@ -90,7 +92,9 @@ pub struct App {
     queue_cursor: usize,
     tag_cursor: usize,
     mini_cursor: usize,
-    search: Option<SearchBar>,
+    search: Option<LineInput>,
+    command: Option<LineInput>,
+    health: Option<Vec<HealthEntry>>,
     dialog: Option<Dialog>,
     settings: Option<SettingsState>,
     quit: bool,
@@ -110,68 +114,91 @@ pub struct App {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SearchBarOutcome {
+enum LineOutcome {
     Done,
     Cancel,
     None,
 }
 
-struct SearchBar {
+struct LineInput {
     text: String,
     cursor: usize,
 }
 
-impl SearchBar {
+impl LineInput {
     fn new() -> Self {
-        SearchBar {
+        LineInput {
             text: String::new(),
             cursor: 0,
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> SearchBarOutcome {
+    fn handle_key(&mut self, key: KeyEvent) -> LineOutcome {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
-            return SearchBarOutcome::None;
+            return LineOutcome::None;
         }
         match key.code {
-            KeyCode::Esc => SearchBarOutcome::Cancel,
-            KeyCode::Enter => SearchBarOutcome::Done,
+            KeyCode::Esc => LineOutcome::Cancel,
+            KeyCode::Enter => LineOutcome::Done,
             KeyCode::Backspace => {
-                if self.cursor > 0 {
-                    self.text.remove(self.cursor - 1);
-                    self.cursor -= 1;
+                if let Some(prev) = self.prev_boundary() {
+                    self.text.remove(prev);
+                    self.cursor = prev;
                 }
-                SearchBarOutcome::None
+                LineOutcome::None
             }
             KeyCode::Delete => {
                 if self.cursor < self.text.len() {
                     self.text.remove(self.cursor);
                 }
-                SearchBarOutcome::None
+                LineOutcome::None
             }
             KeyCode::Left => {
-                self.cursor = self.cursor.saturating_sub(1);
-                SearchBarOutcome::None
+                if let Some(prev) = self.prev_boundary() {
+                    self.cursor = prev;
+                }
+                LineOutcome::None
             }
             KeyCode::Right => {
-                self.cursor = (self.cursor + 1).min(self.text.len());
-                SearchBarOutcome::None
+                if self.cursor < self.text.len() {
+                    self.cursor = self.next_boundary();
+                }
+                LineOutcome::None
             }
             KeyCode::Home => {
                 self.cursor = 0;
-                SearchBarOutcome::None
+                LineOutcome::None
             }
             KeyCode::End => {
                 self.cursor = self.text.len();
-                SearchBarOutcome::None
+                LineOutcome::None
             }
             KeyCode::Char(c) => {
                 self.text.insert(self.cursor, c);
-                self.cursor += 1;
-                SearchBarOutcome::None
+                self.cursor += c.len_utf8();
+                LineOutcome::None
             }
-            _ => SearchBarOutcome::None,
+            _ => LineOutcome::None,
         }
+    }
+
+    fn prev_boundary(&self) -> Option<usize> {
+        if self.cursor == 0 {
+            return None;
+        }
+        self.text
+            .char_indices()
+            .take_while(|(i, _)| *i < self.cursor)
+            .last()
+            .map(|(i, _)| i)
+    }
+
+    fn next_boundary(&self) -> usize {
+        self.text
+            .char_indices()
+            .find(|(i, _)| *i > self.cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.text.len())
     }
 
     fn pattern(&self) -> Option<String> {
@@ -181,6 +208,23 @@ impl SearchBar {
         } else {
             Some(t.to_string())
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExCommand {
+    Empty,
+    Quit,
+    CheckHealth,
+    Unknown(String),
+}
+
+fn parse_ex_command(line: &str) -> ExCommand {
+    match line.trim() {
+        "" => ExCommand::Empty,
+        "q" | "quit" => ExCommand::Quit,
+        "checkhealth" => ExCommand::CheckHealth,
+        other => ExCommand::Unknown(other.to_string()),
     }
 }
 
@@ -198,6 +242,8 @@ impl App {
             tag_cursor: 0,
             mini_cursor: 0,
             search: None,
+            command: None,
+            health: None,
             dialog: None,
             settings: None,
             quit: false,
@@ -254,6 +300,12 @@ impl App {
             match key.code {
                 KeyCode::Esc | KeyCode::Enter => self.error_popup = None,
                 _ => {}
+            }
+            return;
+        }
+        if self.health.is_some() {
+            if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
+                self.health = None;
             }
             return;
         }
@@ -319,12 +371,12 @@ impl App {
         if let Some(s) = self.search.as_mut() {
             let before = s.text.clone();
             match s.handle_key(key) {
-                SearchBarOutcome::Done => self.search = None,
-                SearchBarOutcome::Cancel => {
+                LineOutcome::Done => self.search = None,
+                LineOutcome::Cancel => {
                     self.connection.send(Command::SetSearch { pattern: None });
                     self.search = None;
                 }
-                SearchBarOutcome::None => {}
+                LineOutcome::None => {}
             }
             if let Some(s) = self.search.as_mut()
                 && s.text != before
@@ -335,7 +387,20 @@ impl App {
             }
             return;
         }
+        if self.command.is_some() {
+            let outcome = self.command.as_mut().map(|c| c.handle_key(key));
+            match outcome {
+                Some(LineOutcome::Done) => {
+                    let line = self.command.take().map(|c| c.text).unwrap_or_default();
+                    self.run_command(&line);
+                }
+                Some(LineOutcome::Cancel) => self.command = None,
+                Some(LineOutcome::None) | None => {}
+            }
+            return;
+        }
         match self.keymap.resolve(key) {
+            Some(Action::Command) => self.command = Some(LineInput::new()),
             Some(Action::Settings) => {
                 self.settings = Some(SettingsState::new());
             }
@@ -353,7 +418,7 @@ impl App {
                     self.dialog = Some(Dialog::Edit(dialog::Form::new_edit(&sel)));
                 }
             }
-            Some(Action::Search) => self.search = Some(SearchBar::new()),
+            Some(Action::Search) => self.search = Some(LineInput::new()),
             Some(Action::AddMini) => {
                 if let Some(sel) = self.snap.as_ref().and_then(|s| s.selected.clone()) {
                     self.connection.send(Command::AddMini { id: sel.id });
@@ -427,7 +492,12 @@ impl App {
     }
 
     fn on_mouse(&mut self, m: MouseEvent) {
-        if self.dialog.is_some() || self.search.is_some() || self.help_open {
+        if self.dialog.is_some()
+            || self.search.is_some()
+            || self.command.is_some()
+            || self.health.is_some()
+            || self.help_open
+        {
             return;
         }
         let MouseEvent {
@@ -621,9 +691,28 @@ impl App {
         }
     }
 
+    fn run_command(&mut self, line: &str) {
+        match parse_ex_command(line) {
+            ExCommand::Empty => {}
+            ExCommand::Quit => {
+                self.shutdown = true;
+                self.quit = true;
+            }
+            ExCommand::CheckHealth => {
+                self.health = Some(health::report(&self.cfg.mpv_binary));
+            }
+            ExCommand::Unknown(cmd) => {
+                self.msg = Some((
+                    format!("unknown command: {cmd} (try :q or :checkhealth)"),
+                    Instant::now(),
+                ));
+            }
+        }
+    }
+
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let area = frame.area();
-        let [main, status, _cmdline] = Layout::vertical([
+        let [main, status, cmdline] = Layout::vertical([
             Constraint::Min(0),
             Constraint::Length(1),
             Constraint::Length(1),
@@ -719,6 +808,15 @@ impl App {
                 frame.render_widget(ratatui::widgets::Paragraph::new("connecting..."), main);
             }
         }
+        if let Some(input) = &self.command {
+            command_bar(
+                frame,
+                cmdline,
+                &input.text,
+                input.cursor,
+                theme::statusline_palette(),
+            );
+        }
         if let Some(d) = &self.dialog {
             frame.render_widget(Clear, queue);
             dialog::form_dialog(frame, queue, d);
@@ -738,6 +836,10 @@ impl App {
         if self.help_open {
             let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
             help_dialog(frame, main, &self.cfg.keybindings, p);
+        }
+        if let Some(entries) = &self.health {
+            let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
+            health_dialog(frame, main, entries, p);
         }
     }
 }
@@ -808,32 +910,66 @@ mod tests {
 
     #[test]
     fn searching_accumulates_text_and_live_pattern() {
-        let mut sb = SearchBar::new();
+        let mut sb = LineInput::new();
         assert_eq!(sb.pattern(), None);
         for c in "beat".chars() {
-            assert_eq!(sb.handle_key(key(KeyCode::Char(c))), SearchBarOutcome::None);
+            assert_eq!(sb.handle_key(key(KeyCode::Char(c))), LineOutcome::None);
         }
         assert_eq!(sb.pattern(), Some("beat".to_string()));
-        assert_eq!(sb.handle_key(key(KeyCode::Esc)), SearchBarOutcome::Cancel);
+        assert_eq!(sb.handle_key(key(KeyCode::Esc)), LineOutcome::Cancel);
     }
 
     #[test]
     fn search_backspace_and_enter() {
-        let mut sb = SearchBar::new();
+        let mut sb = LineInput::new();
         for c in "abc".chars() {
             sb.handle_key(key(KeyCode::Char(c)));
         }
         sb.handle_key(key(KeyCode::Backspace));
         assert_eq!(sb.text, "ab");
-        assert_eq!(sb.handle_key(key(KeyCode::Enter)), SearchBarOutcome::Done);
+        assert_eq!(sb.handle_key(key(KeyCode::Enter)), LineOutcome::Done);
     }
 
     #[test]
     fn search_empty_or_whitespace_is_no_pattern() {
-        let mut sb = SearchBar::new();
+        let mut sb = LineInput::new();
         assert_eq!(sb.pattern(), None);
         sb.handle_key(key(KeyCode::Char(' ')));
         sb.handle_key(key(KeyCode::Char(' ')));
         assert_eq!(sb.pattern(), None);
+    }
+
+    #[test]
+    fn line_input_keeps_cursor_on_char_boundaries() {
+        let mut input = LineInput::new();
+        for c in "caf\u{e9}".chars() {
+            input.handle_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(input.text, "caf\u{e9}");
+        assert_eq!(input.cursor, input.text.len());
+        input.handle_key(key(KeyCode::Left));
+        assert_eq!(input.cursor, 3);
+        assert!(input.text.is_char_boundary(input.cursor));
+        input.handle_key(key(KeyCode::Right));
+        assert_eq!(input.cursor, input.text.len());
+        input.handle_key(key(KeyCode::Backspace));
+        assert_eq!(input.text, "caf");
+        assert_eq!(input.cursor, 3);
+        input.handle_key(key(KeyCode::Char('\u{e9}')));
+        assert_eq!(input.text, "caf\u{e9}");
+        assert!(input.text.is_char_boundary(input.cursor));
+    }
+
+    #[test]
+    fn parses_quit_and_checkhealth_commands() {
+        assert_eq!(parse_ex_command("q"), ExCommand::Quit);
+        assert_eq!(parse_ex_command(" quit "), ExCommand::Quit);
+        assert_eq!(parse_ex_command("checkhealth"), ExCommand::CheckHealth);
+        assert_eq!(parse_ex_command(""), ExCommand::Empty);
+        assert_eq!(parse_ex_command("   "), ExCommand::Empty);
+        assert_eq!(
+            parse_ex_command("bogus"),
+            ExCommand::Unknown("bogus".to_string())
+        );
     }
 }
