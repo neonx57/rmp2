@@ -5,17 +5,19 @@ use crate::storage::Paths;
 use serde_json::json;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::fs;
+use std::fs::{self, File};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::Ordering;
 use std::thread;
 
-pub fn spawn_daemon() -> Result<(), Error> {
+pub fn spawn_daemon() -> Result<Child, Error> {
     let exe = std::env::current_exe().map_err(|e| Error::Daemon(e.to_string()))?;
     let paths = Paths::resolve();
     let mut cmd = Command::new(exe);
+    let err_file = File::create(paths.run_dir.join("daemon-err"))
+        .map_err(|e| Error::Daemon(format!("spawn daemon: {e}")))?;
     cmd.arg("--daemon")
         .env("VMP_CONFIG_DIR", &paths.config_dir)
         .env("VMP_DATA_DIR", &paths.data_dir)
@@ -23,11 +25,10 @@ pub fn spawn_daemon() -> Result<(), Error> {
         .env("VMP_RUN_DIR", &paths.run_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(err_file))
         .process_group(0);
     cmd.spawn()
-        .map_err(|e| Error::Daemon(format!("spawn daemon: {e}")))?;
-    Ok(())
+        .map_err(|e| Error::Daemon(format!("spawn daemon: {e}")))
 }
 
 pub(super) fn pid_alive(pid_path: &Path) -> bool {

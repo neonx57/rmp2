@@ -1,4 +1,5 @@
-use super::settings::{Config, Titles};
+use super::ScriptingError;
+use crate::config::{Config, Titles};
 use mlua::{Lua, Table, Value};
 use std::path::Path;
 
@@ -67,7 +68,7 @@ vmp = {
 }
 "#;
 
-pub(super) fn eval_config(raw: &str, lua_dir: &Path) -> Result<Config, String> {
+pub fn eval_config(raw: &str, lua_dir: &Path) -> Result<Config, ScriptingError> {
     let lua = Lua::new();
     let globals = lua.globals();
     let package: Table = globals
@@ -102,9 +103,9 @@ pub(super) fn eval_config(raw: &str, lua_dir: &Path) -> Result<Config, String> {
     lua.load(raw)
         .set_name("init.lua")
         .exec()
-        .map_err(|e| exec_error_text(&e))?;
+        .map_err(|e| ScriptingError::new(exec_error_text(&e)))?;
 
-    harvest(&lua, &vmp)
+    harvest(&lua, &vmp).map_err(ScriptingError::new)
 }
 
 fn exec_error_text(e: &mlua::Error) -> String {
@@ -143,8 +144,7 @@ fn harvest(lua: &Lua, vmp: &Table) -> Result<Config, String> {
     let titles_value: Value = opt.raw_get("titles").map_err(|e| e.to_string())?;
     let titles = harvest_titles(titles_value)?;
     let map: Table = vmp.get("map").map_err(|e| e.to_string())?;
-    let mut keybindings = harvest_map(&map)?;
-    crate::config::validation::merge_and_validate_bindings(&mut keybindings)?;
+    let keybindings = harvest_map(&map)?;
     Ok(Config {
         mpv_binary,
         volume_step,

@@ -191,6 +191,100 @@ fn foreign_live_pid_blocks_a_second_daemon() {
 
     conn.send(Command::Shutdown);
     let _ = conn;
+    assert_exit_success(&mut child);
+    assert!(!sock.exists(), "subprocess daemon removed its socket");
+    assert!(!paths_for_env.pid.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn spawned_daemon_delivers_config_over_ipc() {
+    let root = temp_root("ipc-cfg");
+    let dirs = Paths::for_root(root.clone());
+    fs::write(
+        &dirs.config,
+        "vmp.opt.volume_step = 9\nvmp.opt.titles.mini = \"Picked\"\n",
+    )
+    .unwrap();
+
+    let mut child = Process::new(env!("CARGO_BIN_EXE_vmp"))
+        .arg("--daemon")
+        .env("VMP_CONFIG_DIR", &dirs.config_dir)
+        .env("VMP_DATA_DIR", &dirs.data_dir)
+        .env("VMP_STATE_DIR", &dirs.state_dir)
+        .env("VMP_RUN_DIR", &dirs.run_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn detached vmp daemon from the built binary");
+
+    let conn = connect_retry(&dirs.sock);
+    let snap = wait_snapshot(&conn, Duration::from_secs(2), |_| true);
+    assert_eq!(
+        snap.config.volume_step, 9,
+        "daemon-effective opt values ride every snapshot"
+    );
+    assert_eq!(snap.config.titles.mini, "Picked");
+    assert_eq!(
+        snap.config.map.get("add_mini").map(|v| v.as_slice()),
+        Some(&["A".to_string()][..]),
+        "default keybindings ride the snapshot for TUI clients"
+    );
+
+    conn.send(Command::Shutdown);
+    assert_exit_success(&mut child);
+    assert!(!dirs.sock.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn config_from_real_init_lua_rides_first_snapshot() {
+    let root = temp_root("cfgval");
+    let paths = Paths::for_root(root.clone());
+    let sock = paths.sock.clone();
+    fs::write(
+        &paths.config,
+        "vmp.opt.titles.queue = \"Mix\"\nvmp.opt.titles.info = \"About\"\nvmp.map.add_mini = \"Z\"\n",
+    )
+    .unwrap();
+
+    let cfg = Config::load(&paths.config, &paths.lua_dir()).expect("init.lua loads");
+    assert_eq!(cfg.titles.queue, "Mix");
+    assert_eq!(cfg.titles.info, "About");
+    assert_eq!(cfg.titles.filter, "Filter", "unset titles keep defaults");
+    assert_eq!(
+        cfg.keybindings.get("add_mini").map(|v| v.as_slice()),
+        Some(&["Z".to_string()][..])
+    );
+    assert_eq!(cfg.volume_step, 5, "unset opts keep defaults");
+    let want_map = cfg.keybindings.clone();
+
+    let handle = thread::Builder::new()
+        .name("daemon-cfg".into())
+        .spawn(move || Daemon::serve(paths, cfg))
+        .expect("spawn daemon thread");
+    let conn = connect_retry(&sock);
+    let snap = wait_snapshot(&conn, Duration::from_secs(2), |_| true);
+
+    assert_eq!(snap.config.titles.queue, "Mix");
+    assert_eq!(snap.config.titles.info, "About");
+    assert_eq!(snap.config.titles.filter, "Filter");
+    assert_eq!(snap.config.volume_step, 5);
+    assert_eq!(snap.config.mpv_binary, "mpv");
+    assert_eq!(
+        snap.config.map, want_map,
+        "merged default + user keybindings are delivered verbatim"
+    );
+
+    conn.send(Command::Shutdown);
+    let daemon_result = handle.join().expect("daemon thread exits cleanly");
+    assert!(daemon_result.is_ok(), "daemon serve returns without error");
+    assert!(!sock.exists(), "daemon removes its socket on shutdown");
+    let _ = fs::remove_dir_all(root);
+}
+
+fn assert_exit_success(child: &mut std::process::Child) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         match child.try_wait() {
@@ -206,14 +300,11 @@ fn foreign_live_pid_blocks_a_second_daemon() {
         }
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(!sock.exists(), "subprocess daemon removed its socket");
-    assert!(!paths_for_env.pid.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
-fn invalid_config_fails_fast_without_spawning_a_daemon() {
-    let root = temp_root("badcfg");
+fn invalid_config_error_is_relayed_from_spawned_daemon() {
+    let root = temp_root("relay");
     let dirs = Paths::for_root(root.clone());
     fs::write(dirs.config, "vmp.opt.not_real = 1\n").unwrap();
 
@@ -230,8 +321,15 @@ fn invalid_config_fails_fast_without_spawning_a_daemon() {
 
     assert_eq!(out.status.code(), Some(1), "config error exits nonzero");
     let msg = String::from_utf8_lossy(&out.stderr);
-    assert!(msg.contains("invalid config:"), "{msg}");
+    assert!(
+        msg.contains("vmp daemon: invalid config:"),
+        "TUI relays the daemon's own stderr: {msg}"
+    );
     assert!(msg.contains("not_real"), "{msg}");
-    assert!(!dirs.sock.exists(), "no daemon may be spawned");
+    assert!(!dirs.sock.exists(), "no daemon socket may exist");
+    assert!(
+        !dirs.run_dir.join("daemon-err").exists(),
+        "daemon-err is cleaned up after the relay"
+    );
     let _ = fs::remove_dir_all(root);
 }

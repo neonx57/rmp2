@@ -12,7 +12,7 @@ use crate::db::Library;
 use crate::engine::{Lcg, filter_queue, mini_pick, next_index};
 use crate::error::Error;
 use crate::mpv::{Mpv, MpvMsg, P_CACHE, P_PAUSE, P_TIME_POS};
-use crate::proto::{Command, MediaInfo, RepeatMode, Snapshot, Theme};
+use crate::proto::{Command, ConfigState, MediaInfo, RepeatMode, Snapshot, Theme};
 use crate::storage::{LastState, Paths, state};
 use regex::Regex;
 use std::collections::HashMap;
@@ -58,6 +58,7 @@ pub struct Daemon {
     pub(super) tag_counts: Vec<(String, i64)>,
     pub(super) media_dirty: bool,
     pub(super) last_snap: Option<Snapshot>,
+    pub(super) config_state: ConfigState,
     pub(super) position: f64,
     pub(super) paused: bool,
     pub(super) loading: bool,
@@ -104,6 +105,7 @@ impl Daemon {
     }
 
     fn new(paths: Paths, cfg: Config, listener: UnixListener, last: LastState) -> Self {
+        let config_state = ConfigState::from_config(&cfg);
         let lib = Library::open(&paths.db).unwrap_or_else(|e| {
             eprintln!("db error: {e}");
             std::process::exit(1);
@@ -139,6 +141,7 @@ impl Daemon {
             tag_counts: Vec::new(),
             media_dirty: true,
             last_snap: None,
+            config_state,
             position: last.position,
             paused: true,
             loading: false,

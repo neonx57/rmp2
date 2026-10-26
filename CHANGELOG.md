@@ -34,12 +34,23 @@ project is pre-1.0 so minor bumps hold breaking changes.
   announced.
 - `enter_resume_loaded` resume path re-checks mpv liveness and falls back to
   a normal play + notify when the daemon's mpv handle is gone.
-- A broken config now surfaces its full `invalid config:` message from the
-  TUI start-up before any daemon spawn (previously reported as
-  `daemon did not start`), and no daemon is left to spawn into failing
-  configs.
+- A broken config now surfaces its full `invalid config:` message at
+  startup instead of a generic `daemon did not start`: the TUI captures the
+  spawned daemon's stderr to `$XDG_RUNTIME_DIR/vmp/daemon-err` and relays it
+  verbatim when the daemon exits early, before unlinking the file.
 
 ### Changed
+- A new `scripting/` subsystem owns the embedded Lua runtime: `config/` now
+  holds only typed settings, and `Config::load` delegates evaluation to
+  `vmp::scripting::eval_config` (`config/lua_host.rs` moved to
+  `scripting/host.rs`). The Lua VM is still booted per evaluation and dropped
+  after harvesting; `ScriptingError` is the scripting error type.
+- Configuration is evaluated once per daemon start, not in every process:
+  the daemon bakes the effective settings (`mpv_binary`, titles,
+  `volume_step`, `seek_step`, keybinding map) into `Snapshot.config`
+  (`proto::ConfigState`) and the TUI rebuilds its `Keymap`/titles from the
+  snapshot pull instead of running Lua. Snapshot payloads without the new
+  `config` field still parse.
 - Restructured the crate into a library + thin binary split (`src/lib.rs` +
   slimmed `src/main.rs`) with zero behavior change.
 - Domain modules became directories with `mod.rs` re-exports:
@@ -49,7 +60,8 @@ project is pre-1.0 so minor bumps hold breaking changes.
     `spawn_daemon` are re-exported from `daemon`)
   - `mpv.rs` -> `mpv/{mod,process,ipc,events,commands,properties}.rs`
   - `db.rs` -> `db/{mod,connection,schema,migrations,queries}.rs`
-  - `config.rs` -> `config/{mod,lua_host,settings,loader,validation,defaults}.rs`
+  - `config.rs` -> `config/{mod,settings,loader,validation,defaults}.rs` plus
+    a new `scripting/{mod,host}.rs` for the Lua runtime
     (`Config::load` returns `Result<Self, Error>` and runs the Lua host)
   - `state.rs` -> `storage/{paths,state}.rs` (`Paths::for_root` test seam)
   - `ui/` -> `ui/{app,mod,input,layout,render,panes/{mod,filters,library,mini_queue,status}}.rs`

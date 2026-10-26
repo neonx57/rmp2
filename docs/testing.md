@@ -14,7 +14,7 @@
 | `tests/config.rs`           | Lua host eval/defaults merge, `vmp.opt`/`vmp.map` validation errors, `require()` over `lua/`, `none` unbind |
 | `tests/storage.rs`          | XDG `Paths` layout, `VMP_*_DIR` env overrides, `session.json` roundtrip + corruption fallback |
 | `tests/database.rs`         | library CRUD, uri upsert, tag/favorite semantics, legacy column migration |
-| `tests/daemon.rs`           | real daemon e2e: socket snapshots, library add/select/queue, persisted state, shutdown; plus a cross-process "daemon already running" test using the built binary |
+| `tests/daemon.rs`           | real daemon e2e: socket snapshots, library add/select/queue, persisted state, shutdown, config delivery in `Snapshot.config`, invalid-config relay via `daemon-err`; plus a cross-process "daemon already running" test using the built binary |
 | `tests/mpv_integration.rs`  | mpv probe of a generated WAV fixture + a live `Mpv` IPC session; self-skips (printing "skip") when mpv is missing |
 
 A shared fixture module (`tests/common/mod.rs`) builds small PCM16 WAV files
@@ -37,7 +37,11 @@ helper (the daemon pushes over the socket asynchronously), and finishes with
 `Command::Shutdown`. The cross-process test spawns `env!("CARGO_BIN_EXE_vmp")
 --daemon` with the four `VMP_*_DIR` env vars pointed at a temp root: it
 verifies the `daemon already running` refusal, sends state-changing commands,
-and waits for a clean exit after `Shutdown`.
+and waits for a clean exit after `Shutdown`. Config-delivery tests run the
+daemon with a real `init.lua` (custom `vmp.opt`/`vmp.map`) and assert the
+values arrive inside `Snapshot.config`; the relay test exercises the TUI
+spawn path against a broken `init.lua` and pins the daemon's verbatim
+`invalid config:` output plus `daemon-err` cleanup.
 
 ## Self-skipping mpv tests
 

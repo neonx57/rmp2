@@ -1,4 +1,7 @@
-use vmp::proto::{Command, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme};
+use vmp::config::Titles;
+use vmp::proto::{
+    Command, ConfigState, MediaInfo, NowPlaying, RepeatMode, Snapshot, TagInfo, Theme,
+};
 
 fn sample_media(id: i64) -> MediaInfo {
     MediaInfo {
@@ -48,6 +51,23 @@ fn sample_snapshot() -> Snapshot {
         shuffle: false,
         notify: Some("added: One".into()),
         error: None,
+        config: ConfigState {
+            mpv_binary: "mpv".into(),
+            titles: Titles {
+                filter: "Filter".into(),
+                queue: "Queue".into(),
+                mini: "Mini Queue".into(),
+                info: "Info".into(),
+            },
+            volume_step: 5,
+            seek_step: 5.0,
+            map: [(
+                "move_down".to_string(),
+                vec!["j".to_string(), "down".to_string()],
+            )]
+            .into_iter()
+            .collect(),
+        },
     }
 }
 
@@ -130,6 +150,11 @@ fn snapshot_roundtrip_preserves_every_field() {
     assert!(empty.transparent);
     assert!(empty.all_media.is_empty());
     assert_eq!(empty.volume, 70);
+    assert_eq!(
+        empty.config,
+        ConfigState::default(),
+        "legacy snapshot json gains default config"
+    );
 }
 
 #[test]

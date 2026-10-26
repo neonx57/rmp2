@@ -132,7 +132,8 @@ Source layout:
 | `src/engine.rs`       | Pure queue/tag filtering and repeat/shuffle logic      |
 | `src/proto.rs`        | JSON protocol messages shared by daemon and TUI        |
 | `src/ui/`             | ratatui app shell, input/keymap, panes, dialogs        |
-| `src/config/`         | Embedded Lua host, `vmp.opt`/`vmp.map` API, validation |
+| `src/config/`         | Typed settings: loader, defaults, validation           |
+| `src/scripting/`      | Embedded Lua 5.4 host, `vmp.opt`/`vmp.map` API         |
 | `src/storage/`        | XDG paths and persisted session state                  |
 | `src/commands/`       | Vim-style `:` command parsing                          |
 | `src/app/action.rs`   | Action enum and name/group tables                      |

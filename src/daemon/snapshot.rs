@@ -49,6 +49,7 @@ impl Daemon {
             shuffle: self.shuffle,
             notify: self.notify.take(),
             error: self.error.take(),
+            config: self.config_state.clone(),
         }
     }
 

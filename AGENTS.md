@@ -22,11 +22,13 @@ offline files and online streams (mpv/yt-dlp handles the stream).
 Single binary with two modes:
 
 - `vmp --daemon`: headless long-running server. Owns the mpv subprocess, the
-  SQLite library, and the queue/playback engine. Exposes a JSON protocol over a
+  SQLite library, the config/scripting evaluation, and the queue/playback
+  engine. Exposes a JSON protocol over a
   Unix socket at `$XDG_RUNTIME_DIR/vmp/vmp.sock`. Survives TUI exit (background
   play).
 - `vmp` (default): spawns the daemon if absent, then runs the ratatui TUI. The
-  TUI is a thin client: it forwards keybindings and renders daemon state
+  TUI is a thin, config-less client: it rebuilds keybindings/titles from the
+  last snapshot's `config` block and renders daemon state
   snapshots. `Shift+q` detaches only; `q`/`esc` (after confirm) shuts the
   daemon down.
 
@@ -34,7 +36,7 @@ Storage follows XDG:
 - `~/.config/vmp/` - `init.lua` (user config; never generated), `lua/` modules
 - `~/.local/share/vmp/` - `library.sqlite3` (media library DB)
 - `~/.local/state/vmp/` - `session.json` (persisted volume/repeat/shuffle/active tags/theme), `vmp.log` (daemon log)
-- `$XDG_RUNTIME_DIR/vmp/` - `vmp.sock` (daemon IPC), `vmp.pid` (pid file), `mpv.sock`, probe sockets
+- `$XDG_RUNTIME_DIR/vmp/` - `vmp.sock` (daemon IPC), `vmp.pid` (pid file), `mpv.sock`, `daemon-err`, probe sockets
 
 `VMP_CONFIG_DIR` / `VMP_DATA_DIR` / `VMP_STATE_DIR` / `VMP_RUN_DIR` override
 each directory; a spawned daemon inherits all four.
@@ -50,8 +52,10 @@ Library + thin binary split (`src/lib.rs` declares the public modules;
 - `src/error.rs`, `src/logging.rs` - shared error enum, epoch-ms/file logging
 - `src/app/action.rs` - Action enum, name/group/label tables
 - `src/commands/` - ex-command parser (`:` mode) and builtins list
-- `src/config/` - lua_host (embedded Lua 5.4, `vmp.opt`/`vmp.map` harvest),
-  settings, loader, validation, defaults
+- `src/config/` - settings, loader (delegates Lua evaluation), validation,
+  defaults; typed result of config only
+- `src/scripting/` - Lua runtime ownership (`vmp.opt`/`vmp.map` host, eval
+  once and drop the VM), `ScriptingError`; lands future daemon-owned plugin VM
 - `src/storage/` - XDG paths (incl. `Paths::for_root` test seam), session state
 - `src/db/` - SQLite schema, migrations, queries (rusqlite bundled)
 - `src/engine.rs` - pure queue/tag filtering, repeat/shuffle, `Lcg`
@@ -69,13 +73,18 @@ Library + thin binary split (`src/lib.rs` declares the public modules;
 
 ## Config system
 
-Config is an nvim-style Lua script, not TOML. `Config::load(&paths.config,
-&paths.lua_dir())` boots embedded Lua 5.4 (mlua vendored), installs `vmp.opt`
-and `vmp.map` with validating metatables, seeds defaults, runs `init.lua`,
-then harvests; every failure (syntax, runtime, type, unknown name) surfaces as
-`invalid config: ...`. Missing `init.lua` = defaults, no file is written.
-`require()` resolves under `~/.config/vmp/lua/`. Lua keywords need bracket
-syntax (`vmp.map["repeat"]`).
+Config is an nvim-style Lua script, not TOML. Only the daemon evaluates it:
+`Config::load(&paths.config, &paths.lua_dir())` reads the file and delegates
+to `vmp::scripting::eval_config`, which boots embedded Lua 5.4 (mlua
+vendored), installs `vmp.opt` and `vmp.map` with validating metatables, seeds
+defaults, runs `init.lua`, harvests, and drops the VM; every failure (syntax,
+runtime, type, unknown name) surfaces as `invalid config: ...`. Missing
+`init.lua` = defaults, no file is written. `require()` resolves under
+`~/.config/vmp/lua/`. Lua keywords need bracket syntax (`vmp.map["repeat"]`).
+The effective settings ride every `Snapshot.config` (`proto::ConfigState`):
+the TUI builds its `Keymap`/titles/steps from the snapshot and never runs Lua.
+A spawned daemon's stderr is captured to `$XDG_RUNTIME_DIR/vmp/daemon-err`;
+on early daemon exit the TUI relays that file verbatim before unlinking.
 
 ## Lua plugins (planned)
 

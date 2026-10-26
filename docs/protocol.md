@@ -58,12 +58,24 @@ separate immediate snapshot on each client connect:
   "search": "one", "selected": { ... MediaInfo ... },
   "now": { "id": 2, "position": 12.25, "duration": 181.5, "paused": false, "loading": true },
   "volume": 65, "repeat": "All", "shuffle": false,
-  "notify": "added: One", "error": null
+  "notify": "added: One", "error": null,
+  "config": {
+    "mpv_binary": "mpv",
+    "titles": { "filter": "Filter", "queue": "Queue", "mini": "Mini Queue", "info": "Info" },
+    "volume_step": 5,
+    "seek_step": 5.0,
+    "map": { "move_down": ["j", "down"], "add_mini": ["A"] }
+  }
 }
 ```
 
 Field notes:
 
+- `config` carries the daemon's effective settings (`proto::ConfigState`,
+  evaluated once from `init.lua` at daemon start). The TUI rebuilds its
+  `Keymap` and pane titles from this block whenever it changes and never
+  evaluates Lua itself. Older snapshot payloads without the field still
+  parse - it defaults (`#[serde(default)]`).
 - `repeat` is PascalCase (`"Off"`, `"All"`, `"One"`) unlike `theme`, which is
   lowercase - a deliberate-but-quirky difference kept for compatibility and
   covered by tests.
@@ -82,6 +94,8 @@ Field notes:
 - Subsequent pushes dedupe against the previous snapshot; the event loop
   throttles continuous position updates to ~350ms. Commands that change state
   push immediately.
+- `config` changes only when the daemon restarts with different settings, so
+  the block rides the dedupe-aware full snapshot without extra traffic.
 - A `notify`/`error` string is washed out once by the daemon (`take()`), so
   the very next dedup push will not repeat it.
 

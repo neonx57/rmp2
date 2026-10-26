@@ -1,8 +1,8 @@
 use std::io::Write;
-use std::process::exit;
+use std::path::Path;
+use std::process::{Child, exit};
 use std::thread;
 use std::time::Duration;
-use vmp::config::Config;
 use vmp::daemon::{Daemon, spawn_daemon};
 use vmp::storage::Paths;
 use vmp::ui::{Connection, run};
@@ -16,38 +16,53 @@ fn main() {
         return;
     }
     let paths = Paths::resolve();
-    let cfg = match Config::load(&paths.config, &paths.lua_dir()) {
+    let connection = connect_attached(&paths);
+    if let Err(e) = run(connection) {
+        let _ = writeln!(std::io::stderr(), "vmp: {e}");
+    }
+}
+
+fn connect_attached(paths: &Paths) -> Connection {
+    if let Ok(c) = Connection::connect(&paths.sock) {
+        return c;
+    }
+    let child = match spawn_daemon() {
         Ok(c) => c,
         Err(e) => {
-            let _ = writeln!(std::io::stderr(), "vmp: {e}");
+            eprintln!("vmp: {e}");
             exit(1);
         }
     };
-    let connection = match Connection::connect(&paths.sock) {
-        Ok(c) => c,
-        Err(_) => {
-            if let Err(e) = spawn_daemon() {
-                eprintln!("vmp: {e}");
-                exit(1);
-            }
-            let mut connected = None;
-            for _ in 0..80 {
-                thread::sleep(Duration::from_millis(50));
-                if let Ok(c) = Connection::connect(&paths.sock) {
-                    connected = Some(c);
-                    break;
-                }
-            }
-            match connected {
-                Some(c) => c,
-                None => {
-                    eprintln!("vmp: daemon did not start");
-                    exit(1);
-                }
-            }
+    wait_for_daemon(&paths.sock, child, &paths.run_dir.join("daemon-err"))
+}
+
+fn wait_for_daemon(sock: &Path, mut child: Child, err_path: &Path) -> Connection {
+    let mut connected = None;
+    for _ in 0..80 {
+        if let Ok(c) = Connection::connect(sock) {
+            connected = Some(c);
+            break;
         }
-    };
-    if let Err(e) = run(connection, cfg) {
-        let _ = writeln!(std::io::stderr(), "vmp: {e}");
+        if matches!(child.try_wait(), Ok(Some(_)) | Err(_)) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    match connected {
+        Some(c) => {
+            let _ = std::fs::remove_file(err_path);
+            c
+        }
+        None => {
+            let text = std::fs::read_to_string(err_path).unwrap_or_default();
+            let _ = std::fs::remove_file(err_path);
+            let text = text.trim();
+            if text.is_empty() {
+                eprintln!("vmp: daemon did not start");
+            } else {
+                eprintln!("{text}");
+            }
+            exit(1);
+        }
     }
 }

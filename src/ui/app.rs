@@ -2,7 +2,7 @@ use super::Connection;
 use crate::commands::{ExCommand, parse_ex_command};
 use crate::config::Config;
 use crate::health::{self, HealthEntry};
-use crate::proto::{Command, Snapshot, Theme};
+use crate::proto::{Command, ConfigState, Snapshot, Theme};
 use crate::ui::dialog::{self, Dialog, DialogOutcome, FormCommand};
 use crate::ui::input::{Action, Keymap, LineInput, LineOutcome};
 use crate::ui::panes::{Section, scroll_offset};
@@ -12,11 +12,13 @@ use crossterm::event::{
 };
 use ratatui::layout::{Position, Rect};
 use std::io::{self};
+use std::thread;
 use std::time::{Duration, Instant};
 
 pub struct App {
     pub(super) connection: Connection,
     pub(super) cfg: Config,
+    pub(super) last_config: Option<ConfigState>,
     pub(super) keymap: Keymap,
     pub(super) snap: Option<Snapshot>,
     pub(super) section: Section,
@@ -46,11 +48,13 @@ pub struct App {
 }
 
 impl App {
-    fn new(connection: Connection, cfg: Config) -> Self {
+    fn new(connection: Connection) -> Self {
+        let cfg = Config::default();
         let keymap = Keymap::build(&cfg);
         App {
             connection,
             cfg,
+            last_config: None,
             keymap,
             snap: None,
             section: Section::Queue,
@@ -84,6 +88,19 @@ impl App {
         let Some(snap) = self.connection.pull() else {
             return false;
         };
+        if self.last_config.as_ref() != Some(&snap.config) {
+            let cfg = Config {
+                mpv_binary: snap.config.mpv_binary.clone(),
+                volume_step: snap.config.volume_step,
+                seek_step: snap.config.seek_step,
+                titles: snap.config.titles.clone(),
+                keybindings: snap.config.map.clone(),
+                ..Config::default()
+            };
+            self.keymap = Keymap::build(&cfg);
+            self.cfg = cfg;
+            self.last_config = Some(snap.config.clone());
+        }
         if let Some(n) = &snap.notify {
             self.msg = Some((n.clone(), Instant::now()));
         }
@@ -531,11 +548,18 @@ impl App {
     }
 }
 
-pub fn run(connection: Connection, cfg: Config) -> io::Result<()> {
+pub fn run(connection: Connection) -> io::Result<()> {
     let mut terminal = ratatui::init();
     let res = (|| {
         crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
-        let mut app = App::new(connection, cfg);
+        let mut app = App::new(connection);
+        let boot = Instant::now();
+        while app.snap.is_none() && boot.elapsed() < Duration::from_secs(3) {
+            app.pull();
+            if app.snap.is_none() {
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
         let start = Instant::now();
         let mut last_tick: Option<u64> = None;
         let mut redraw = true;

@@ -30,7 +30,8 @@ sh scripts/test.sh    # cargo test + mpv integration notice + release build
 ## Layout conventions
 
 - The binary is thin: `src/main.rs` only parses argv, attaches/spawns the
-  daemon, loads config, and calls `vmp::ui::run`. Keep logic in the library so
+  daemon, relays daemon startup errors from `daemon-err`, and calls
+  `vmp::ui::run`. Keep logic in the library so
   integration tests can exercise it (`src/lib.rs` declares the public modules).
 - Modules are directories with a `mod.rs` re-exporting sibling content
   (`daemon/`, `mpv/`, `db/`, `config/`, `ui/panes/`). Shared helpers live in

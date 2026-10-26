@@ -9,5 +9,6 @@ pub mod health;
 pub mod logging;
 pub mod mpv;
 pub mod proto;
+pub mod scripting;
 pub mod storage;
 pub mod ui;

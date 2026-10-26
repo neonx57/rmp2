@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Titles {
     pub filter: String,
     pub queue: String,

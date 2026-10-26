@@ -1,3 +1,4 @@
+use crate::config::Titles;
 use serde::{Deserialize, Serialize};
 
 pub const FAVORITE_TAG: &str = "favorite";
@@ -91,6 +92,35 @@ pub struct Snapshot {
     pub shuffle: bool,
     pub notify: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub config: ConfigState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConfigState {
+    pub mpv_binary: String,
+    pub titles: Titles,
+    pub volume_step: i32,
+    pub seek_step: f64,
+    pub map: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+impl Default for ConfigState {
+    fn default() -> Self {
+        Self::from_config(&crate::config::Config::default())
+    }
+}
+
+impl ConfigState {
+    pub fn from_config(cfg: &crate::config::Config) -> Self {
+        ConfigState {
+            mpv_binary: cfg.mpv_binary.clone(),
+            titles: cfg.titles.clone(),
+            volume_step: cfg.volume_step,
+            seek_step: cfg.seek_step,
+            map: cfg.keybindings.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

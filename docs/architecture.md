@@ -25,7 +25,7 @@ checked tags define the play queue. Offline files and online streams both work
 | `~/.config/vmp/`                 | `init.lua` (user-created), `lua/` (require() root) |
 | `~/.local/share/vmp/`            | `library.sqlite3`                            |
 | `~/.local/state/vmp/`            | `session.json`, `vmp.log`                    |
-| `$XDG_RUNTIME_DIR/vmp/`          | `vmp.sock`, `vmp.pid`, `mpv.sock`, probe sockets |
+| `$XDG_RUNTIME_DIR/vmp/`          | `vmp.sock`, `vmp.pid`, `mpv.sock`, `daemon-err`, probe sockets |
 
 Each directory can be overridden with `VMP_CONFIG_DIR`, `VMP_DATA_DIR`,
 `VMP_STATE_DIR`, and `VMP_RUN_DIR`; a spawned daemon inherits all four so the
@@ -36,13 +36,14 @@ instead of touching real XDG directories.
 
 | Path                            | Responsibility                                                          |
 | ------------------------------- | ----------------------------------------------------------------------- |
-| `src/main.rs`                   | argv handling, daemon spawn/attach, wiring only                         |
+| `src/main.rs`                   | argv handling, daemon spawn/attach + stderr relay, wiring only          |
 | `src/lib.rs`                    | library root; the binary consumes this via `vmp::`                      |
 | `src/error.rs`                  | shared `Error` enum (io/config/daemon) with verbatim message text       |
 | `src/logging.rs`                | epoch-ms timestamps and append-only log file                            |
 | `src/app/`                      | `action.rs` - action enum, name/group/label tables                      |
 | `src/commands/`                 | Vim-style ex-commands: `mod.rs`, `parser.rs` (`ExCommand`), `builtins.rs`|
-| `src/config/`                   | Lua config - `lua_host.rs` (embedded Lua 5.4 host: bootstrap, seed, harvest), `loader.rs` `Config::load`, `validation.rs` key/action checks + binding merge, `defaults.rs` bindings + `default_init_lua` text, `settings.rs` structs |
+| `src/config/`                   | typed config - `loader.rs` reads `init.lua` and delegates evaluation, `validation.rs` key/action checks + binding merge, `defaults.rs` bindings + `default_init_lua` text, `settings.rs` structs |
+| `src/scripting/`                | Lua scripting subsystem - `host.rs` owns the embedded Lua 5.4 VM (bootstrap, seed, harvest) and drops it after evaluation; the future home of the daemon-owned plugin runtime |
 | `src/storage/`                  | `paths.rs` XDG `Paths` (incl. the `for_root` test seam), `state.rs` persisted session state |
 | `src/db/`                       | SQLite library - `mod.rs` types, `connection.rs`, `schema.rs`, `migrations.rs`, `queries.rs` |
 | `src/engine.rs`                 | pure queue/tag filtering, repeat/shuffle state machine, `Lcg`           |
@@ -57,30 +58,40 @@ instead of touching real XDG directories.
 
 ## Config pipeline
 
-Config is an nvim-style Lua script, not a data format. `Config::load` only
-reads `init.lua` when the user created it; a missing file is pure defaults and
-vmp never writes the file itself.
+Config is an nvim-style Lua script, not a data format. Only the daemon
+evaluates `init.lua`, exactly once per daemon start; a missing file is pure
+defaults and vmp never writes the file itself. The TUI never runs Lua - the
+effective settings arrive over IPC in every `Snapshot.config` block.
 
-1. `lua_host.rs` boots embedded Lua 5.4 (vendored via mlua, no system lua),
-   sets `package.path` to the config dir's `lua/` so `require()` resolves
-   user modules, and installs the `vmp` global from a Lua bootstrap chunk.
-2. The bootstrap defines `vmp.opt` and `vmp.map` with metatables that reject
+1. `config/loader.rs::Config::load` reads `init.lua` when the user created it
+   and delegates evaluation to `scripting::eval_config`, then merges default
+   bindings via `config/validation.rs`.
+2. `scripting/host.rs` boots embedded Lua 5.4 (vendored via mlua, no system
+   lua), sets `package.path` to the config dir's `lua/` so `require()`
+   resolves user modules, and installs the `vmp` global from a Lua bootstrap
+   chunk. The VM is discarded as soon as harvesting finishes.
+3. The bootstrap defines `vmp.opt` and `vmp.map` with metatables that reject
    unknown options/actions exactly like nvim; Rust then seeds the known
    option/action tables and the default values via `raw_set`.
-3. `init.lua` runs. Assignments may be plain (`vmp.opt.volume_step = 3`,
+4. `init.lua` runs. Assignments may be plain (`vmp.opt.volume_step = 3`,
    `vmp.map.move_down = { "j", "down" }`, `vmp.map.repeat = ...` is invalid —
    use `vmp.map["repeat"] = "r"` because `repeat` is a Lua keyword) and
    `"none"` still unbinds an action.
-4. Harvesting walks the tables back out with type-checked getters; every
+5. Harvesting walks the tables back out with type-checked getters; every
    config failure - syntax, runtime, type, unknown name - surfaces as
-   `invalid config: ...`.
-5. `validation.rs` merges defaults under user bindings (so partial configs
-   keep untouched defaults) and rejects duplicate keys across actions.
+   `invalid config: ...`. The daemon prints `vmp daemon: <error>`; the TUI's
+   spawn relay reads it from `$XDG_RUNTIME_DIR/vmp/daemon-err` and shows the
+   daemon's real message instead of a generic failure.
+6. `validation.rs` merges defaults under user bindings (so partial configs
+   keep untouched defaults) and rejects duplicate keys across actions. The
+   final `Config`, reduced to the TUI-relevant fields (`proto::ConfigState`:
+   `mpv_binary`, `titles`, `volume_step`, `seek_step`, keybinding map), is
+   baked into every snapshot the daemon sends.
 
 ## Data flow
 
-1. The TUI resolves a KeyEvent through `ui/input.rs` `Keymap` (built from the
-   `init.lua` bindings harvested by `lua_host.rs`) into an `app::Action`.
+1. The TUI resolves a KeyEvent through `ui/input.rs` `Keymap`, rebuilt only
+   when the `Snapshot.config` block changes, into an `app::Action`.
 2. `ui/app.rs` maps the action to a `proto::Command` and pushes it over the
    `daemon/client.rs` `Connection` (writer thread).
 3. `daemon/server.rs` accepts, `daemon/dispatcher.rs` applies the command,
@@ -103,7 +114,6 @@ vmp never writes the file itself.
 - `f` toggles the reserved `favorite` tag.
 - `f10` settings (colorscheme/transparency) live in daemon state and
   `session.json`, not in `init.lua`.
-
 ## Plugins
 
 The config system itself is already Lua: `init.lua` can `require()` modules
@@ -112,6 +122,9 @@ from `~/.config/vmp/lua/`, giving users a real scripting surface today.
 A fuller plugin API is on the roadmap (see CONTRIBUTING.md): users will be
 able to register new ex-commands and extend behavior in Lua. The landing
 points are reserved but intentionally absent today - no empty stubs exist.
+The Lua runtime machinery already lives in `src/scripting/`; a future plugin
+manager will run one daemon-owned VM there, carefully kept off playback and
+rendering hot paths.
 
 - Lua plugins will register new ex-commands next to the existing builtins in
   `src/commands/` (`builtins.rs` lists the builtins, `parser.rs` owns parsing);
