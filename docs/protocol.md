@@ -20,13 +20,16 @@ All variants and their `snake_case` action names:
 | ----------------- | -------------------------------------- | ---------------------------------------- |
 | `play_pause`      | -                                     | toggles or starts the first queued track |
 | `next` / `prev`   | -                                     | walks the filtered queue                 |
+| `stop`            | -                                     | stops playback and unloads the track     |
 | `play`            | `id: i64`                             |                                          |
 | `select`          | `id: i64`                             | marks the highlighted row                |
 | `seek`            | `delta: f64`                          | relative seconds                         |
 | `volume`          | `delta: i32`                          | clamped 0..130                           |
 | `set_volume`      | `volume: i32`                         | clamped 0..130                           |
 | `repeat_cycle`    | -                                     | Off -> All -> One -> Off                 |
+| `set_repeat`      | `mode: "Off"\|"All"\|"One"`           | sets the repeat mode directly            |
 | `shuffle_toggle`  | -                                     |                                          |
+| `set_shuffle`     | `on: bool`                            | sets shuffle directly                    |
 | `toggle_tag`      | `tag: string`                         | lowercased before matching               |
 | `clear_tags`      | -                                     |                                          |
 | `set_search`      | `pattern: string?`                    | empty string clears                      |

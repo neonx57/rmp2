@@ -151,10 +151,28 @@ fn daemon_serves_snapshots_and_shuts_down() {
         s.repeat == RepeatMode::All
     });
 
+    conn.send(Command::SetRepeat {
+        mode: RepeatMode::One,
+    });
+    let _ = wait_snapshot(&conn, Duration::from_secs(2), |s| {
+        s.repeat == RepeatMode::One
+    });
+
+    conn.send(Command::SetShuffle { on: false });
+    let _ = wait_snapshot(&conn, Duration::from_secs(2), |s| !s.shuffle);
+
+    conn.send(Command::Stop);
+    let _ = wait_snapshot(&conn, Duration::from_secs(2), |s| {
+        s.notify.as_deref() == Some("stopped")
+    });
+
     let persisted = fs::read_to_string(state_path).unwrap();
     assert!(persisted.contains("\"theme\":\"light\""));
     assert!(persisted.contains("\"volume\":88"));
-    assert!(persisted.contains("\"repeat\":\"All\""));
+    assert!(
+        persisted.contains("\"repeat\":\"One\""),
+        "set_repeat persists the mode it set"
+    );
 
     conn.send(Command::Shutdown);
     let daemon_result = handle.join().expect("daemon thread exits cleanly");

@@ -129,6 +129,7 @@ pub enum Command {
     PlayPause,
     Next,
     Prev,
+    Stop,
     Play {
         id: i64,
     },
@@ -145,7 +146,13 @@ pub enum Command {
         volume: i32,
     },
     RepeatCycle,
+    SetRepeat {
+        mode: RepeatMode,
+    },
     ShuffleToggle,
+    SetShuffle {
+        on: bool,
+    },
     ToggleTag {
         tag: String,
     },

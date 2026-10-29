@@ -41,7 +41,7 @@ instead of touching real XDG directories.
 | `src/error.rs`                  | shared `Error` enum (io/config/daemon) with verbatim message text       |
 | `src/logging.rs`                | epoch-ms timestamps and append-only log file                            |
 | `src/app/`                      | `action.rs` - action enum, name/group/label tables                      |
-| `src/commands/`                 | Vim-style ex-commands: `mod.rs`, `parser.rs` (`ExCommand`), `builtins.rs`|
+| `src/commands/`                 | Vim-style ex-commands: `mod.rs`, `parser.rs` (`ExCommand`, nvim-style prefix resolution), `builtins.rs` (command catalog + usages)|
 | `src/config/`                   | typed config - `loader.rs` reads `init.lua` and delegates evaluation, `validation.rs` key/action checks + binding merge, `defaults.rs` bindings + `default_init_lua` text, `settings.rs` structs |
 | `src/scripting/`                | Lua scripting subsystem - `host.rs` owns the embedded Lua 5.4 VM (bootstrap, seed, harvest) and drops it after evaluation; the future home of the daemon-owned plugin runtime |
 | `src/storage/`                  | `paths.rs` XDG `Paths` (incl. the `for_root` test seam), `state.rs` persisted session state |

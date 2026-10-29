@@ -99,11 +99,23 @@ and Info (details). `Tab` / `h` / `l` move focus between them.
 ### Commands
 
 Press `:` to open the command line at the bottom of the screen. `Esc` cancels.
+Commands resolve nvim-style: full names or unambiguous prefixes (`:vol` ->
+`:volume`), with `!` to force (`:delete!` skips the confirm dialog).
 
-| Command       | Action                                                       |
-| ------------- | ------------------------------------------------------------ |
-| `:q`, `:quit` | Quit the app and stop the daemon                             |
-| `:checkhealth`| List dependencies (`mpv`, `yt-dlp`) and report their status  |
+| Command          | Action                                                       |
+| ---------------- | ------------------------------------------------------------ |
+| `:q`, `:quit`    | Quit the app and stop the daemon                             |
+| `:checkhealth`   | List dependencies (`mpv`, `yt-dlp`) and report their status  |
+| `:help commands` | The full command list in the UI; `:help NAME` describes one  |
+| `:play [n]`      | Play the selection, or the n-th queue item                   |
+| `:seek [+N|-N|M:SS]` | Seek by seconds or to a time                             |
+| `:volume [+N|-N|N]`  | Change or set the volume                                 |
+| `:tag NAME`      | Toggle a tag filter                                          |
+| `:add [URI [TAGS]]` | Add media without opening the dialog                      |
+
+Every keybind is also a command (`:next`, `:repeat one`, `:shuffle off`,
+`:favorite`, `:mini add`, `:pane info`, `:theme dark`, `:detach`, ...). See
+[CONFIG.md](CONFIG.md) for the complete reference.
 
 The daemon is a separate headless process that owns playback, the library, and
 the queue. It starts automatically on first `vmp` launch. Storage follows XDG

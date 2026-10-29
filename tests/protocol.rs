@@ -81,6 +81,23 @@ fn command_line_format_matches_tagged_action_names() {
     let raw = serde_json::to_string(&c).unwrap();
     assert_eq!(raw, r#"{"action":"toggle_tag","tag":"rock"}"#);
 
+    let c = Command::Stop;
+    assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"action":"stop"}"#);
+
+    let c = Command::SetRepeat {
+        mode: RepeatMode::One,
+    };
+    assert_eq!(
+        serde_json::to_string(&c).unwrap(),
+        r#"{"action":"set_repeat","mode":"One"}"#
+    );
+
+    let c = Command::SetShuffle { on: false };
+    assert_eq!(
+        serde_json::to_string(&c).unwrap(),
+        r#"{"action":"set_shuffle","on":false}"#
+    );
+
     let c = Command::AddMini { id: 9 };
     assert_eq!(
         serde_json::to_string(&c).unwrap(),
@@ -96,11 +113,16 @@ fn commands_roundtrip_through_json() {
         Command::Prev,
         Command::Play { id: 3 },
         Command::Select { id: 4 },
+        Command::Stop,
         Command::Seek { delta: -7.5 },
         Command::Volume { delta: -5 },
         Command::SetVolume { volume: 0 },
         Command::RepeatCycle,
+        Command::SetRepeat {
+            mode: RepeatMode::All,
+        },
         Command::ShuffleToggle,
+        Command::SetShuffle { on: true },
         Command::ToggleTag { tag: "live".into() },
         Command::ClearTags,
         Command::SetSearch { pattern: None },

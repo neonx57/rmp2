@@ -1,6 +1,8 @@
 use super::app::App;
 use crate::proto::Theme;
-use crate::ui::dialog::{self, error_dialog, health_dialog, help_dialog, settings_dialog};
+use crate::ui::dialog::{
+    self, commands_dialog, error_dialog, health_dialog, help_dialog, settings_dialog,
+};
 use crate::ui::panes::{
     Section, command_bar, filter_pane, mini_pane, queue_pane, search_bar, state_pane, status_bar,
 };
@@ -123,7 +125,11 @@ impl App {
         }
         if self.help_open {
             let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
-            help_dialog(frame, panes.main, &self.cfg.keybindings, p);
+            if self.help_commands {
+                commands_dialog(frame, panes.main, p);
+            } else {
+                help_dialog(frame, panes.main, &self.cfg.keybindings, p);
+            }
         }
         if let Some(entries) = &self.health {
             let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));

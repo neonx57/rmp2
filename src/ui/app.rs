@@ -1,5 +1,8 @@
 use super::Connection;
-use crate::commands::{ExCommand, parse_ex_command};
+use crate::commands::builtins;
+use crate::commands::{
+    ExCommand, HelpTopic, MiniSub, PaneTarget, SeekTarget, VolumeArg, parse_ex_command,
+};
 use crate::config::Config;
 use crate::health::{self, HealthEntry};
 use crate::proto::{Command, ConfigState, Snapshot, Theme};
@@ -37,6 +40,7 @@ pub struct App {
     pub(super) loading_since: Option<Instant>,
     pub(super) error_popup: Option<String>,
     pub(super) help_open: bool,
+    pub(super) help_commands: bool,
     pub(super) queue_area: Rect,
     pub(super) filter_area: Rect,
     pub(super) mini_area: Rect,
@@ -73,6 +77,7 @@ impl App {
             loading_since: None,
             error_popup: None,
             help_open: false,
+            help_commands: false,
             queue_area: Rect::default(),
             filter_area: Rect::default(),
             mini_area: Rect::default(),
@@ -147,6 +152,7 @@ impl App {
             let close = key.code == KeyCode::Esc || self.keymap.resolve(key) == Some(Action::Help);
             if close {
                 self.help_open = false;
+                self.help_commands = false;
             }
             return;
         }
@@ -240,6 +246,7 @@ impl App {
             }
             Some(Action::Help) => {
                 self.help_open = true;
+                self.help_commands = false;
             }
             Some(Action::ConfirmQuit) => self.dialog = Some(Dialog::ConfirmExit),
             Some(Action::Detach) => {
@@ -535,16 +542,295 @@ impl App {
             ExCommand::CheckHealth => {
                 self.health = Some(health::report(&self.cfg.mpv_binary));
             }
+            ExCommand::Help(topic) => self.run_help(topic),
+            ExCommand::Settings => self.settings = Some(SettingsState::new()),
+            ExCommand::Detach => {
+                self.quit = true;
+                self.shutdown = false;
+            }
+            ExCommand::Play(n) => self.ex_play(n),
+            ExCommand::Pause => self.ex_pause(false),
+            ExCommand::Resume => self.ex_pause(true),
+            ExCommand::Toggle => self.connection.send(Command::PlayPause),
+            ExCommand::Stop => self.connection.send(Command::Stop),
+            ExCommand::Next => self.connection.send(Command::Next),
+            ExCommand::Prev => self.connection.send(Command::Prev),
+            ExCommand::Seek(target) => self.ex_seek(target),
+            ExCommand::Volume(arg) => self.ex_volume(arg),
+            ExCommand::Repeat(mode) => match mode {
+                Some(mode) => self.connection.send(Command::SetRepeat { mode }),
+                None => self.connection.send(Command::RepeatCycle),
+            },
+            ExCommand::Shuffle(on) => match on {
+                Some(on) => self.connection.send(Command::SetShuffle { on }),
+                None => self.connection.send(Command::ShuffleToggle),
+            },
+            ExCommand::Tag(name) => self.ex_tag(&name),
+            ExCommand::Tags => {
+                let line = self.tags_line();
+                self.notify(line);
+            }
+            ExCommand::ClearTags => self.connection.send(Command::ClearTags),
+            ExCommand::Search(pattern) => self.ex_search(pattern),
+            ExCommand::Add(args) => match args {
+                None => self.dialog = Some(Dialog::Add(dialog::Form::new_add())),
+                Some(args) => self.connection.send(Command::Add {
+                    uri: args.uri,
+                    title: None,
+                    tags: args.tags,
+                }),
+            },
+            ExCommand::Edit => {
+                let sel = self.snap.as_ref().and_then(|s| s.selected.clone());
+                match sel {
+                    Some(sel) => self.dialog = Some(Dialog::Edit(dialog::Form::new_edit(&sel))),
+                    None => self.notify("nothing selected".into()),
+                }
+            }
+            ExCommand::Delete { force } => {
+                let sel = self
+                    .snap
+                    .as_ref()
+                    .and_then(|s| s.selected.as_ref().map(|m| m.id));
+                match (force, sel) {
+                    (true, Some(id)) => self.connection.send(Command::Delete { id }),
+                    (true, None) => self.notify("nothing selected".into()),
+                    (false, _) => self.dialog = Some(Dialog::ConfirmDelete),
+                }
+            }
+            ExCommand::Favorite => {
+                let sel = self
+                    .snap
+                    .as_ref()
+                    .and_then(|s| s.selected.as_ref().map(|m| m.id));
+                match sel {
+                    Some(id) => self.connection.send(Command::ToggleFavorite { id }),
+                    None => self.notify("nothing selected".into()),
+                }
+            }
+            ExCommand::Mini(sub) => self.ex_mini(sub),
+            ExCommand::Pane(target) => self.ex_pane(target),
+            ExCommand::Up => self.move_cursor(-1),
+            ExCommand::Down => self.move_cursor(1),
+            ExCommand::Theme(choice) => {
+                let theme = match choice {
+                    Some(theme) => theme,
+                    None => match self.snap.as_ref().map(|s| s.theme) {
+                        Some(Theme::Dark) => Theme::Light,
+                        _ => Theme::Dark,
+                    },
+                };
+                self.connection.send(Command::SetTheme { theme });
+            }
+            ExCommand::Transparency(on) => {
+                let on = match on {
+                    Some(on) => on,
+                    None => !self.snap.as_ref().map(|s| s.transparent).unwrap_or(false),
+                };
+                self.connection.send(Command::SetTransparency { on });
+            }
+            ExCommand::Invalid(msg) => self.notify(msg),
+            ExCommand::Ambiguous { typed, candidates } => {
+                let msg = format!("ambiguous command: \"{typed}\" ({})", candidates.join(", "));
+                self.notify(msg);
+            }
             ExCommand::Unknown(cmd) => {
-                self.msg = Some((
-                    format!(
-                        "unknown command: {cmd} (try {})",
-                        crate::commands::builtins::known_commands_hint()
-                    ),
-                    Instant::now(),
-                ));
+                let msg = format!(
+                    "unknown command: {cmd} (try {})",
+                    builtins::known_commands_hint()
+                );
+                self.notify(msg);
             }
         }
+    }
+
+    fn notify(&mut self, msg: String) {
+        self.msg = Some((msg, Instant::now()));
+    }
+
+    fn run_help(&mut self, topic: HelpTopic) {
+        match topic {
+            HelpTopic::Keys => {
+                self.help_open = true;
+                self.help_commands = false;
+            }
+            HelpTopic::Commands => {
+                self.help_open = true;
+                self.help_commands = true;
+            }
+            HelpTopic::Command(name) => {
+                let msg = match builtins::find(&name) {
+                    Some(b) => format!("{} - {}", b.usage, b.desc),
+                    None => format!("no such command: {name} (try :help commands)"),
+                };
+                self.notify(msg);
+            }
+        }
+    }
+
+    fn ex_play(&mut self, n: Option<usize>) {
+        let Some(n) = n else {
+            self.play_cursor();
+            return;
+        };
+        let hit = self
+            .snap
+            .as_ref()
+            .and_then(|s| s.queue.get(n.saturating_sub(1)).copied());
+        match hit {
+            Some(id) => self.connection.send(Command::Play { id }),
+            None => {
+                if self.snap.is_some() {
+                    self.notify(format!("no queue item {n}"));
+                } else {
+                    self.notify("not connected to the daemon".into());
+                }
+            }
+        }
+    }
+
+    fn ex_pause(&mut self, resume: bool) {
+        let paused = self
+            .snap
+            .as_ref()
+            .and_then(|s| s.now.as_ref().map(|n| n.paused));
+        match (resume, paused) {
+            (true, Some(true)) | (false, Some(false)) => self.connection.send(Command::PlayPause),
+            (true, _) => self.notify("nothing paused".into()),
+            (false, _) => self.notify("nothing playing".into()),
+        }
+    }
+
+    fn ex_seek(&mut self, target: Option<SeekTarget>) {
+        let now = self.snap.as_ref().and_then(|s| s.now.clone());
+        if now.is_none() && self.snap.is_none() {
+            self.notify("not connected to the daemon".into());
+            return;
+        }
+        let Some(target) = target else {
+            let msg = match &now {
+                Some(n) => {
+                    let dur = n
+                        .duration
+                        .map(ex_fmt_clock)
+                        .unwrap_or_else(|| "--:--".into());
+                    format!("position {} / {}", ex_fmt_clock(n.position), dur)
+                }
+                None => "nothing playing".into(),
+            };
+            self.notify(msg);
+            return;
+        };
+        match target {
+            SeekTarget::Relative(delta) => self.connection.send(Command::Seek { delta }),
+            SeekTarget::Absolute(t) => match now {
+                Some(n) => {
+                    let delta = (t - n.position).max(-n.position);
+                    self.connection.send(Command::Seek { delta });
+                }
+                None => self.notify("nothing playing".into()),
+            },
+        }
+    }
+
+    fn ex_volume(&mut self, arg: VolumeArg) {
+        match arg {
+            VolumeArg::Delta(delta) => self.connection.send(Command::Volume { delta }),
+            VolumeArg::Set(volume) => self.connection.send(Command::SetVolume { volume }),
+            VolumeArg::Show => {
+                let vol = self.snap.as_ref().map(|s| s.volume);
+                match vol {
+                    Some(v) => self.notify(format!("volume: {v}")),
+                    None => self.notify("not connected to the daemon".into()),
+                }
+            }
+        }
+    }
+
+    fn ex_tag(&mut self, name: &str) {
+        let known = self
+            .snap
+            .as_ref()
+            .map(|s| s.tags.iter().any(|t| t.name == name));
+        match known {
+            Some(true) => self.connection.send(Command::ToggleTag {
+                tag: name.to_string(),
+            }),
+            Some(false) => self.notify(format!("no such tag: {name}")),
+            None => self.notify("not connected to the daemon".into()),
+        }
+    }
+
+    fn tags_line(&self) -> String {
+        let Some(snap) = self.snap.as_ref() else {
+            return "not connected to the daemon".into();
+        };
+        if snap.tags.is_empty() {
+            return "no tags".into();
+        }
+        let parts: Vec<String> = snap
+            .tags
+            .iter()
+            .map(|t| {
+                if t.checked {
+                    format!("{}({})*", t.name, t.count)
+                } else {
+                    format!("{}({})", t.name, t.count)
+                }
+            })
+            .collect();
+        format!("tags: {}", parts.join(" "))
+    }
+
+    fn ex_search(&mut self, pattern: Option<String>) {
+        if let Some(p) = &pattern
+            && regex::Regex::new(p).is_err()
+        {
+            self.notify(format!("search: invalid regex: {p}"));
+            return;
+        }
+        self.connection.send(Command::SetSearch { pattern });
+    }
+
+    fn ex_mini(&mut self, sub: MiniSub) {
+        let sel = self.snap.as_ref().and_then(|s| s.selected.clone());
+        let Some(sel) = sel else {
+            self.notify("nothing selected".into());
+            return;
+        };
+        let id = sel.id;
+        match sub {
+            MiniSub::Add => self.connection.send(Command::AddMini { id }),
+            MiniSub::Remove => self.connection.send(Command::RemoveMini { id }),
+            MiniSub::Up => self.connection.send(Command::MiniMove { id, delta: -1 }),
+            MiniSub::Down => self.connection.send(Command::MiniMove { id, delta: 1 }),
+        }
+    }
+
+    fn ex_pane(&mut self, target: PaneTarget) {
+        match target {
+            PaneTarget::Next => self.section = self.section.next(),
+            PaneTarget::Prev => self.section = self.section.prev(),
+            PaneTarget::Filter => self.section = Section::Filter,
+            PaneTarget::Mini => {
+                self.prev_section = self.section;
+                self.section = Section::Mini;
+            }
+            PaneTarget::Queue => self.section = Section::Queue,
+            PaneTarget::Info => self.section = Section::Info,
+        }
+    }
+}
+
+fn ex_fmt_clock(secs: f64) -> String {
+    if !secs.is_finite() || secs < 0.0 {
+        return "--:--".into();
+    }
+    let s = secs as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
     }
 }
 

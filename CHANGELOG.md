@@ -73,6 +73,19 @@ project is pre-1.0 so minor bumps hold breaking changes.
   helpers in `logging.rs`.
 
 ### Added
+- Full nvim-style ex-command set in `:` mode covering every keybind/click
+  action: `:play [n]`, `:pause`/`:resume`/`:toggle`, `:stop`, `:next`/`:prev`,
+  `:seek [+N|-N|M:SS]`, `:volume [+N|-N|N]`, `:repeat [off|all|one]`,
+  `:shuffle [on|off]`, `:tag`, `:tags`, `:clear_tags`, `:search`, `:noh`,
+  `:add [URI [TAGS]]` (quoted uris supported), `:edit`, `:delete [!]`,
+  `:favorite`, `:mini [add|remove|up|down]`, `:up`/`:down`,
+  `:pane [next|prev|NAME]`, `:help [keys|commands|NAME]`, `:settings`,
+  `:theme`, `:transparency`, `:detach`. Commands resolve via unambiguous
+  prefix matching (`:vol` -> `:volume`); ambiguous prefixes list candidates.
+  New `commands/builtins.rs` catalog drives parsing, `:help commands` (two
+  column usage dialog) and the unknown-command hint.
+- Protocol commands `stop`, `set_repeat`, `set_shuffle` (additive; the ex
+  commands `:stop`, `:repeat <mode>` and `:shuffle <on|off>` use them).
 - Integration test suites under `tests/` (engine, protocol, config, storage,
   database, daemon e2e incl. a cross-process "daemon already running" check,
   and self-skipping mpv playback tests) plus a shared in-code WAV fixture

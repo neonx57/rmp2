@@ -501,6 +501,30 @@ fn help_column(
     lines
 }
 
+pub fn commands_dialog(frame: &mut Frame, area: Rect, p: Palette) {
+    let width = area.width.saturating_sub(4).clamp(60, 80);
+    let height = area.height.saturating_sub(4).clamp(6, 24);
+    let rect = centered(area, width, height);
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDER)
+        .title(" Commands ")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(p.accent));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    let usages: Vec<Line> = crate::commands::builtins::BUILTINS
+        .iter()
+        .map(|b| Line::from(format!(" {}", b.usage)))
+        .collect();
+    let mid = usages.len().div_ceil(2);
+    let [left, right] =
+        Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(inner);
+    frame.render_widget(Paragraph::new(usages[..mid].to_vec()), left);
+    frame.render_widget(Paragraph::new(usages[mid..].to_vec()), right);
+}
+
 pub fn health_dialog(frame: &mut Frame, area: Rect, entries: &[HealthEntry], p: Palette) {
     let width = area.width.saturating_sub(4).clamp(48, 78);
     let height = area.height.saturating_sub(4).clamp(6, 24);

@@ -211,8 +211,18 @@ impl Daemon {
                 self.persist();
                 self.push();
             }
+            Command::SetRepeat { mode } => {
+                self.repeat = mode;
+                self.persist();
+                self.push();
+            }
             Command::ShuffleToggle => {
                 self.shuffle = !self.shuffle;
+                self.persist();
+                self.push();
+            }
+            Command::SetShuffle { on } => {
+                self.shuffle = on;
                 self.persist();
                 self.push();
             }
@@ -306,6 +316,19 @@ impl Daemon {
             Command::SetTransparency { on } => {
                 self.transparent = on;
                 self.persist();
+                self.push();
+            }
+            Command::Stop => {
+                if let Some(m) = self.mpv.as_mut() {
+                    let _ = m.command(serde_json::json!(["stop"]));
+                }
+                self.now_id = None;
+                self.position = 0.0;
+                self.loading = false;
+                self.paused_for_cache = false;
+                self.eof_pending = false;
+                self.pending_resume = None;
+                self.notify = Some("stopped".into());
                 self.push();
             }
             Command::Shutdown => {

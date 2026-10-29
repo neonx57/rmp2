@@ -135,15 +135,50 @@ persisted in `session.json` so they survive daemon restarts. Navigate with
 Press `:` (rebindable via the `command` action) to open the command line at the
 bottom of the screen. `Esc` cancels without running anything.
 
-| Command        | Action                                                      |
-| -------------- | ----------------------------------------------------------- |
-| `q`, `quit`    | Quit the app and stop the daemon                            |
-| `checkhealth`  | List dependencies (`mpv`, `yt-dlp`) and report their status |
+Commands resolve nvim-style: the full name works, and so does any unambiguous
+prefix (`:vol` -> `:volume`, `:nex` -> `:next`, `:cle` -> `:clear_tags`). An
+ambiguous prefix lists the candidates (`:t` -> `tag, tags, theme, toggle,
+transparency`). Names are lowercase; `!` after a name forces the action
+(`:delete!` skips the confirm dialog). `:help commands` shows the full list in
+the UI, and `:help NAME` describes one command.
+
+| Command                                  | Action                                                        |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| `play [n]`                               | Play the selected track, or the n-th queue item                |
+| `pause` / `resume` / `toggle`            | Pause, resume, or play/pause                                   |
+| `stop`                                   | Stop playback and unload the track                             |
+| `next` (`n`) / `prev`                    | Next / previous track                                          |
+| `seek [+N\|-N\|M:SS]`                    | Seek relative or absolute; bare shows the position             |
+| `volume [+N\|-N\|N]` (`vol`)             | Change or set the volume; bare shows the level                 |
+| `repeat [off\|all\|one]`                 | Cycle or set the repeat mode                                   |
+| `shuffle [on\|off]`                      | Toggle or set shuffle                                          |
+| `tag NAME`                               | Toggle a tag in the filter                                     |
+| `tags`                                   | List tags with counts and checked marks                        |
+| `clear_tags`                             | Uncheck every tag                                              |
+| `search PATTERN`                         | Set a regex filter; bare clears it                             |
+| `noh`                                    | Clear the search filter                                        |
+| `add [URI [TAGS]]`                       | Add media (quote a uri with spaces); bare opens the dialog     |
+| `edit`                                   | Edit the selected media                                        |
+| `delete`                                 | Delete the selected media (`delete!` skips the confirm dialog) |
+| `favorite`                               | Toggle favorite on the selected media                          |
+| `mini [add\|remove\|up\|down]`           | Pin, unpin, or move the selected media in the mini queue       |
+| `up` / `down`                            | Move the cursor in the focused pane                            |
+| `pane [next\|prev\|filter\|mini\|queue\|info]` | Focus a pane                                             |
+| `help [keys\|commands\|NAME]` (`h`)      | Keybindings, the command list, or one command's usage          |
+| `settings`                               | Open the settings dialog (same as `f10`)                       |
+| `theme [dark\|light]`                    | Toggle or set the colorscheme                                  |
+| `transparency [on\|off]`                 | Toggle or set transparency                                     |
+| `detach`                                 | Detach the TUI; playback continues (same as `Shift+q`)         |
+| `q`, `quit`                              | Quit the app and stop the daemon                               |
+| `checkhealth`                            | List dependencies (`mpv`, `yt-dlp`) and report their status    |
 
 `checkhealth` runs `mpv --version` (using `mpv_binary`) and `yt-dlp --version`.
 `mpv` is required; a missing `yt-dlp` is reported as a warning because it is
-only needed for online streams. Unknown commands are reported in the status
-line.
+only needed for online streams. Unknown or ambiguous commands are reported in
+the status line.
+
+Examples: `:volume -10`, `:seek 1:30`, `:add ~/music/a.flac rock live`,
+`:repeat one`, `:pane queue`, `:tag rock`, `:delete!`.
 
 ## Titles (`vmp.opt.titles`)
 

@@ -51,7 +51,8 @@ Library + thin binary split (`src/lib.rs` declares the public modules;
 - `src/main.rs` - entry, argument handling, daemon spawn/attach
 - `src/error.rs`, `src/logging.rs` - shared error enum, epoch-ms/file logging
 - `src/app/action.rs` - Action enum, name/group/label tables
-- `src/commands/` - ex-command parser (`:` mode) and builtins list
+- `src/commands/` - ex-command parser (`:` mode; nvim-style prefix
+  resolution) and the builtin command catalog
 - `src/config/` - settings, loader (delegates Lua evaluation), validation,
   defaults; typed result of config only
 - `src/scripting/` - Lua runtime ownership (`vmp.opt`/`vmp.map` host, eval
@@ -115,8 +116,11 @@ daemon dispatcher path. See CONTRIBUTING.md for the design expectations.
 - `Enter` plays the selected track; on the already-loaded track it resumes
   instead of reloading (default on; `vmp.opt.enter_resume_loaded` in
   init.lua; when the mpv handle is gone it falls back to a normal play).
-- `:` opens Vim-style command mode: `:q` quits and stops the daemon,
-  `:checkhealth` lists `mpv`/`yt-dlp` status in a dialog.
+- `:` opens Vim-style command mode covering every keybind/click action
+  (playback, seek/volume, tags, search, add/edit/delete, panes, theme):
+  nvim-style unambiguous prefix matching, `!` forces, `:help commands` lists
+  them. `:q` quits and stops the daemon, `:checkhealth` lists `mpv`/`yt-dlp`
+  status in a dialog.
 - `f10` opens the settings dialog (colorscheme dark/light, transparency on/off);
   choices live in daemon state and `session.json`, not init.lua.
 
