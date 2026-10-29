@@ -4,7 +4,8 @@ use crate::ui::dialog::{
     self, commands_dialog, error_dialog, health_dialog, help_dialog, settings_dialog,
 };
 use crate::ui::panes::{
-    Section, command_bar, filter_pane, mini_pane, queue_pane, search_bar, state_pane, status_bar,
+    Section, command_bar, complete_popup, filter_pane, mini_pane, queue_pane, search_bar,
+    state_pane, status_bar,
 };
 use crate::ui::theme::{self, palette};
 use ratatui::widgets::Clear;
@@ -99,13 +100,11 @@ impl App {
             }
         }
         if let Some(input) = &self.command {
-            command_bar(
-                frame,
-                panes.cmdline,
-                &input.text,
-                input.cursor,
-                theme::statusline_palette(),
-            );
+            let p = palette(self.snap.as_ref().map(|s| s.theme).unwrap_or(Theme::Dark));
+            command_bar(frame, panes.cmdline, &input.text, input.cursor, p);
+            if let Some(c) = &self.complete {
+                complete_popup(frame, panes.main, &c.candidates, c.sel);
+            }
         }
         if let Some(d) = &self.dialog {
             frame.render_widget(Clear, panes.queue);

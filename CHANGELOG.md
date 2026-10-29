@@ -84,6 +84,12 @@ project is pre-1.0 so minor bumps hold breaking changes.
   prefix matching (`:vol` -> `:volume`); ambiguous prefixes list candidates.
   New `commands/builtins.rs` catalog drives parsing, `:help commands` (two
   column usage dialog) and the unknown-command hint.
+- Cmdline completion: `Tab`/`Down` and `Shift+Tab`/`Up` open and cycle a
+  borderless vertical popup above the command line with command names and
+  enumerated arguments (repeat/shuffle/theme/transparency values, `:pane`/
+  `:mini` words, `:help` topics, and known tag names for `:tag`); typing
+  filters the list live. `Backspace` on an emptied command line closes it,
+  nvim-style.
 - Protocol commands `stop`, `set_repeat`, `set_shuffle` (additive; the ex
   commands `:stop`, `:repeat <mode>` and `:shuffle <on|off>` use them).
 - Integration test suites under `tests/` (engine, protocol, config, storage,
@@ -105,3 +111,5 @@ project is pre-1.0 so minor bumps hold breaking changes.
 - Clippy gating surfaced two latent warnings (unused lifetime in
   `default_bindings`, missing `Default` for `SettingsState`); both are
   fixed without behavior change.
+- The `:` command line no longer paints a white background; it renders with
+  the active theme's normal colors on the terminal's own background.

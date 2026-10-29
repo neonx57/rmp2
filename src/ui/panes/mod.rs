@@ -6,7 +6,9 @@ pub mod status;
 pub use filters::filter_pane;
 pub use library::queue_pane;
 pub use mini_queue::mini_pane;
-pub use status::{StatusBarHits, command_bar, scroll_offset, search_bar, state_pane, status_bar};
+pub use status::{
+    StatusBarHits, command_bar, complete_popup, scroll_offset, search_bar, state_pane, status_bar,
+};
 
 use crate::proto::MediaInfo;
 use crate::ui::theme::Palette;

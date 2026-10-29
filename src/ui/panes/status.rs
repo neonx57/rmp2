@@ -5,7 +5,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Clear, List, ListItem, Paragraph, Wrap};
 use std::time::Duration;
 
 fn fmt_time(secs: f64) -> String {
@@ -148,13 +148,50 @@ pub fn search_bar(
 }
 
 pub fn command_bar(frame: &mut Frame, area: Rect, text: &str, cursor: usize, p: Palette) {
-    let mut spans = input_spans(":", text, cursor, p);
-    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-    let gap = area.width.saturating_sub(used as u16) as usize;
-    spans.push(Span::raw(" ".repeat(gap)));
-    let bareg = p.pane_bg.unwrap_or(Color::White);
-    let para = Paragraph::new(Line::from(spans)).style(Style::default().bg(bareg));
+    let spans = input_spans(":", text, cursor, p);
+    let para = Paragraph::new(Line::from(spans));
     frame.render_widget(para, area);
+}
+
+pub fn complete_popup(frame: &mut Frame, area: Rect, candidates: &[String], sel: usize) {
+    if candidates.is_empty() || area.height == 0 {
+        return;
+    }
+    let sel = sel.min(candidates.len() - 1);
+    let visible = candidates.len().min(8).min(area.height as usize).max(1);
+    let start = sel
+        .saturating_sub(visible.saturating_sub(1))
+        .min(candidates.len() - visible);
+    let words_w = candidates
+        .iter()
+        .map(|c| c.chars().count())
+        .max()
+        .unwrap_or(0)
+        .clamp(8, 40);
+    let width = (words_w as u16 + 2).clamp(8, area.width);
+    let height = visible as u16;
+    let rect = Rect {
+        x: area.x,
+        y: area.bottom().saturating_sub(height),
+        width,
+        height,
+    };
+    frame.render_widget(Clear, rect);
+    let items: Vec<ListItem> = candidates
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .map(|(i, c)| {
+            let style = if i == sel {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            ListItem::new(format!(" {c}")).style(style)
+        })
+        .collect();
+    frame.render_widget(List::new(items), rect);
 }
 
 fn input_spans(prompt: &str, text: &str, cursor: usize, p: Palette) -> Vec<Span<'static>> {

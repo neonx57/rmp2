@@ -100,7 +100,9 @@ and Info (details). `Tab` / `h` / `l` move focus between them.
 
 Press `:` to open the command line at the bottom of the screen. `Esc` cancels.
 Commands resolve nvim-style: full names or unambiguous prefixes (`:vol` ->
-`:volume`), with `!` to force (`:delete!` skips the confirm dialog).
+`:volume`), with `!` to force (`:delete!` skips the confirm dialog). `Tab`/
+`Down` and `Shift+Tab`/`Up` cycle a borderless vertical completion popup with
+command names and their enumerated arguments.
 
 | Command          | Action                                                       |
 | ---------------- | ------------------------------------------------------------ |

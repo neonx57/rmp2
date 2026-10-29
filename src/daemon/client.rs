@@ -22,6 +22,11 @@ impl Connection {
         Ok(Connection { cmd_tx, snap_rx })
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_channels(cmd_tx: Sender<Command>, snap_rx: Receiver<Value>) -> Connection {
+        Connection { cmd_tx, snap_rx }
+    }
+
     pub fn send(&self, cmd: Command) {
         let _ = self.cmd_tx.send(cmd);
     }

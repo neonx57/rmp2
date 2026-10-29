@@ -201,6 +201,21 @@ pub fn find(name: &str) -> Option<&'static ExBuiltin> {
         .find(|b| b.name == name || b.aliases.contains(&name))
 }
 
+pub fn resolve_canonical(word: &str) -> Option<&'static str> {
+    if let Some(b) = find(word) {
+        return Some(b.name);
+    }
+    let matches: Vec<&'static str> = BUILTINS
+        .iter()
+        .filter(|b| b.name.starts_with(word) || b.aliases.iter().any(|a| a.starts_with(word)))
+        .map(|b| b.name)
+        .collect();
+    match matches.as_slice() {
+        [only] => Some(only),
+        _ => None,
+    }
+}
+
 pub fn known_commands_hint() -> String {
     "try :help commands".to_string()
 }
@@ -228,6 +243,16 @@ mod tests {
         assert_eq!(find("q").map(|b| b.name), Some("quit"));
         assert_eq!(find("n").map(|b| b.name), Some("next"));
         assert_eq!(find("nope"), None);
+    }
+
+    #[test]
+    fn resolve_canonical_accepts_exact_alias_or_unique_prefix() {
+        assert_eq!(resolve_canonical("quit"), Some("quit"));
+        assert_eq!(resolve_canonical("q"), Some("quit"));
+        assert_eq!(resolve_canonical("qu"), Some("quit"));
+        assert_eq!(resolve_canonical("vol"), Some("volume"));
+        assert_eq!(resolve_canonical("t"), None, "ambiguous prefix");
+        assert_eq!(resolve_canonical("zzz"), None);
     }
 
     #[test]

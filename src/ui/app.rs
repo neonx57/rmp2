@@ -41,6 +41,7 @@ pub struct App {
     pub(super) error_popup: Option<String>,
     pub(super) help_open: bool,
     pub(super) help_commands: bool,
+    pub(super) complete: Option<Complete>,
     pub(super) queue_area: Rect,
     pub(super) filter_area: Rect,
     pub(super) mini_area: Rect,
@@ -78,6 +79,7 @@ impl App {
             error_popup: None,
             help_open: false,
             help_commands: false,
+            complete: None,
             queue_area: Rect::default(),
             filter_area: Rect::default(),
             mini_area: Rect::default(),
@@ -228,14 +230,33 @@ impl App {
             return;
         }
         if self.command.is_some() {
-            let outcome = self.command.as_mut().map(|c| c.handle_key(key));
-            match outcome {
-                Some(LineOutcome::Done) => {
-                    let line = self.command.take().map(|c| c.text).unwrap_or_default();
-                    self.run_command(&line);
+            match key.code {
+                KeyCode::Tab | KeyCode::Down => self.complete_command(1),
+                KeyCode::BackTab | KeyCode::Up => self.complete_command(-1),
+                KeyCode::Backspace if self.command.as_ref().is_some_and(|c| c.text.is_empty()) => {
+                    self.command = None;
+                    self.complete = None;
                 }
-                Some(LineOutcome::Cancel) => self.command = None,
-                Some(LineOutcome::None) | None => {}
+                _ => {
+                    let before = self.command.as_ref().map(|c| c.text.clone());
+                    let outcome = self.command.as_mut().map(|c| c.handle_key(key));
+                    match outcome {
+                        Some(LineOutcome::Done) => {
+                            self.complete = None;
+                            let line = self.command.take().map(|c| c.text).unwrap_or_default();
+                            self.run_command(&line);
+                        }
+                        Some(LineOutcome::Cancel) => {
+                            self.command = None;
+                            self.complete = None;
+                        }
+                        Some(LineOutcome::None) | None => {}
+                    }
+                    let after = self.command.as_ref().map(|c| c.text.clone());
+                    if before != after {
+                        self.refresh_complete();
+                    }
+                }
             }
             return;
         }
@@ -820,6 +841,111 @@ impl App {
             PaneTarget::Info => self.section = Section::Info,
         }
     }
+
+    fn known_tag_names(&self) -> Vec<String> {
+        self.snap
+            .as_ref()
+            .map(|s| s.tags.iter().map(|t| t.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    fn complete_command(&mut self, delta: i64) {
+        let Some(cmd) = self.command.as_ref() else {
+            return;
+        };
+        let text = cmd.text.clone();
+        let tags = self.known_tag_names();
+        let fresh = completion_for_line(&text, &tags);
+        if let (Some(prev), Some(c)) = (self.complete.as_ref(), fresh.as_ref()) {
+            let token = text[c.token_start..].trim_end().to_lowercase();
+            if c.token_start == prev.token_start
+                && prev.sel < prev.candidates.len()
+                && prev.candidates[prev.sel] == token
+            {
+                let candidates = prev.candidates.clone();
+                let len = candidates.len();
+                let sel = cycled_sel(Some(prev.sel), delta, len);
+                let candidate = candidates[sel].clone();
+                let with_space = prev.command_word && len == 1;
+                let token_start = prev.token_start;
+                let command_word = prev.command_word;
+                self.write_completion(token_start, &candidate, with_space);
+                self.complete = Some(Complete {
+                    candidates,
+                    sel,
+                    token_start,
+                    command_word,
+                });
+                return;
+            }
+        }
+        let Some(c) = fresh else {
+            self.complete = None;
+            return;
+        };
+        if c.candidates.is_empty() {
+            self.complete = None;
+            return;
+        }
+        let len = c.candidates.len();
+        let sel = cycled_sel(None, delta, len);
+        let candidate = c.candidates[sel].clone();
+        let with_space = c.command_word && len == 1;
+        let token_start = c.token_start;
+        let command_word = c.command_word;
+        self.write_completion(token_start, &candidate, with_space);
+        self.complete = Some(Complete {
+            candidates: c.candidates,
+            sel,
+            token_start,
+            command_word,
+        });
+    }
+
+    fn refresh_complete(&mut self) {
+        if self.complete.is_none() {
+            return;
+        }
+        let Some(cmd) = self.command.as_ref() else {
+            self.complete = None;
+            return;
+        };
+        let text = cmd.text.clone();
+        let tags = self.known_tag_names();
+        let Some(c) = completion_for_line(&text, &tags) else {
+            self.complete = None;
+            return;
+        };
+        if c.candidates.is_empty() {
+            self.complete = None;
+            return;
+        }
+        let token = text[c.token_start..].trim_end().to_lowercase();
+        let sel = c
+            .candidates
+            .iter()
+            .position(|cand| *cand == token)
+            .unwrap_or(0);
+        self.complete = Some(Complete {
+            candidates: c.candidates,
+            sel,
+            token_start: c.token_start,
+            command_word: c.command_word,
+        });
+    }
+
+    fn write_completion(&mut self, token_start: usize, candidate: &str, with_space: bool) {
+        let Some(cmd) = self.command.as_mut() else {
+            return;
+        };
+        let mut text = cmd.text[..token_start].to_string();
+        text.push_str(candidate);
+        if with_space {
+            text.push(' ');
+        }
+        cmd.cursor = text.len();
+        cmd.text = text;
+    }
 }
 
 fn ex_fmt_clock(secs: f64) -> String {
@@ -832,6 +958,100 @@ fn ex_fmt_clock(secs: f64) -> String {
     } else {
         format!("{}:{:02}", s / 60, s % 60)
     }
+}
+
+pub(super) struct Complete {
+    pub(super) candidates: Vec<String>,
+    pub(super) sel: usize,
+    token_start: usize,
+    command_word: bool,
+}
+
+fn cycled_sel(current: Option<usize>, delta: i64, len: usize) -> usize {
+    match current {
+        Some(i) => ((i as i64 + delta).rem_euclid(len as i64)) as usize,
+        None if delta > 0 => 0,
+        None => len - 1,
+    }
+}
+
+struct Completion {
+    candidates: Vec<String>,
+    token_start: usize,
+    command_word: bool,
+}
+
+fn completion_for_line(line: &str, known_tags: &[String]) -> Option<Completion> {
+    let trimmed = line.trim_start();
+    let leading = line.len() - trimmed.len();
+    let head_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    let head = &trimmed[..head_end];
+    if head.is_empty() {
+        return Some(Completion {
+            candidates: builtin_names(""),
+            token_start: leading,
+            command_word: true,
+        });
+    }
+    let after_head = leading + head_end;
+    let tail = &line[after_head..];
+    if tail.is_empty() {
+        let prefix = head.to_lowercase();
+        return Some(Completion {
+            candidates: builtin_names(&prefix),
+            token_start: leading,
+            command_word: true,
+        });
+    }
+    let token_start = after_head + (tail.len() - tail.trim_start().len());
+    let canonical = builtins::resolve_canonical(&head.to_lowercase())?;
+    let token = line[token_start..].trim_end().to_lowercase();
+    let candidates = arg_candidates(canonical, known_tags)
+        .into_iter()
+        .filter(|w| w.starts_with(&token))
+        .collect();
+    Some(Completion {
+        candidates,
+        token_start,
+        command_word: false,
+    })
+}
+
+fn builtin_names(prefix: &str) -> Vec<String> {
+    let mut names: Vec<String> = builtins::BUILTINS
+        .iter()
+        .map(|b| b.name.to_string())
+        .filter(|n| n.starts_with(prefix))
+        .collect();
+    names.sort();
+    names
+}
+
+fn arg_candidates(command: &str, known_tags: &[String]) -> Vec<String> {
+    let mut words: Vec<String> = match command {
+        "repeat" => vec!["off".into(), "all".into(), "one".into()],
+        "shuffle" => vec!["on".into(), "off".into()],
+        "theme" => vec!["dark".into(), "light".into()],
+        "transparency" => vec!["on".into(), "off".into()],
+        "mini" => vec!["add".into(), "remove".into(), "up".into(), "down".into()],
+        "pane" => vec![
+            "next".into(),
+            "prev".into(),
+            "filter".into(),
+            "mini".into(),
+            "queue".into(),
+            "info".into(),
+        ],
+        "help" => vec!["keys".into(), "commands".into()],
+        "tag" => known_tags.to_vec(),
+        _ => Vec::new(),
+    };
+    if command == "help" {
+        words.extend(builtin_names(""));
+    }
+    words.sort();
+    words.dedup();
+    words
 }
 
 pub fn run(connection: Connection) -> io::Result<()> {
@@ -894,4 +1114,177 @@ pub fn run(connection: Connection) -> io::Result<()> {
     })();
     ratatui::restore();
     res
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+
+    fn complete(line: &str, tags: &[&str]) -> Option<Completion> {
+        let owned: Vec<String> = tags.iter().map(|s| s.to_string()).collect();
+        completion_for_line(line, &owned)
+    }
+
+    #[test]
+    fn empty_line_lists_every_command_name() {
+        let c = complete("", &[]).unwrap();
+        assert_eq!(c.candidates, builtin_names(""));
+        assert!(c.command_word);
+        assert_eq!(c.token_start, 0);
+    }
+
+    #[test]
+    fn command_word_filters_by_prefix_and_replaces_from_token_start() {
+        let c = complete("rep", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["repeat".to_string()]);
+        assert!(c.command_word);
+        assert_eq!(c.token_start, 0);
+
+        let c = complete("  rep", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["repeat".to_string()]);
+        assert_eq!(c.token_start, 2);
+
+        let c = complete("ne", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["next".to_string()]);
+        let c = complete("n", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["next".to_string(), "noh".to_string()]);
+
+        let c = complete("zzz", &[]).unwrap();
+        assert!(c.candidates.is_empty());
+    }
+
+    #[test]
+    fn trailing_space_switches_to_argument_completion() {
+        let c = complete("repeat ", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["all", "off", "one"]);
+        assert!(!c.command_word);
+        assert_eq!(c.token_start, "repeat ".len());
+
+        let c = complete("rep ", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["all", "off", "one"]);
+
+        let c = complete("theme d", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["dark".to_string()]);
+
+        let c = complete("pane ", &[]).unwrap();
+        assert_eq!(
+            c.candidates,
+            vec![
+                "filter".to_string(),
+                "info".to_string(),
+                "mini".to_string(),
+                "next".to_string(),
+                "prev".to_string(),
+                "queue".to_string()
+            ]
+        );
+
+        let c = complete("mini ", &[]).unwrap();
+        assert_eq!(c.candidates, vec!["add", "down", "remove", "up"]);
+    }
+
+    #[test]
+    fn tag_completion_uses_known_tag_names() {
+        let c = complete("tag ", &["rock", "jazz"]).unwrap();
+        assert_eq!(c.candidates, vec!["jazz".to_string(), "rock".to_string()]);
+        let c = complete("tag ro", &["rock", "jazz"]).unwrap();
+        assert_eq!(c.candidates, vec!["rock".to_string()]);
+        let c = complete("tag ", &[]).unwrap();
+        assert!(c.candidates.is_empty());
+    }
+
+    #[test]
+    fn help_completes_topics_and_command_names() {
+        let c = complete("help c", &[]).unwrap();
+        assert!(c.candidates.contains(&"commands".to_string()));
+        assert!(c.candidates.contains(&"checkhealth".to_string()));
+        assert!(c.candidates.contains(&"clear_tags".to_string()));
+    }
+
+    #[test]
+    fn free_form_commands_complete_nothing() {
+        assert!(
+            complete("add /a.mp3 ", &["rock"])
+                .unwrap()
+                .candidates
+                .is_empty()
+        );
+        assert!(complete("search foo", &[]).unwrap().candidates.is_empty());
+        assert!(complete("volume ", &[]).unwrap().candidates.is_empty());
+    }
+
+    #[test]
+    fn ambiguous_head_completes_no_arguments() {
+        assert!(complete("t ", &[]).is_none());
+        assert!(complete("pa ", &[]).is_none());
+    }
+
+    #[test]
+    fn unknown_head_yields_no_candidates() {
+        assert!(complete("zzz", &[]).unwrap().candidates.is_empty());
+        assert!(complete("zzz ", &[]).is_none());
+    }
+
+    #[test]
+    fn fresh_completion_starts_at_first_or_last_candidate() {
+        assert_eq!(cycled_sel(None, 1, 5), 0);
+        assert_eq!(cycled_sel(None, -1, 5), 4);
+        assert_eq!(cycled_sel(None, 1, 1), 0);
+    }
+
+    #[test]
+    fn cycling_wraps_in_both_directions() {
+        assert_eq!(cycled_sel(Some(4), 1, 5), 0);
+        assert_eq!(cycled_sel(Some(0), -1, 5), 4);
+        assert_eq!(cycled_sel(Some(2), 1, 5), 3);
+        assert_eq!(cycled_sel(Some(2), -1, 5), 1);
+        assert_eq!(cycled_sel(Some(0), 1, 1), 0);
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    use crossterm::event::KeyModifiers;
+    use std::sync::mpsc;
+
+    fn app() -> App {
+        let (cmd_tx, _cmd_rx) = mpsc::channel();
+        let (_snap_tx, snap_rx) = mpsc::channel();
+        App::new(Connection::from_channels(cmd_tx, snap_rx))
+    }
+
+    fn press(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+        app.on_key(KeyEvent::new(code, mods));
+    }
+
+    fn backspaces_down_to_empty_prompt(app: &mut App) {
+        press(app, KeyCode::Char(':'), KeyModifiers::NONE);
+        assert!(app.command.is_some());
+        for c in "tags".chars() {
+            press(app, KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        for _ in 0..4 {
+            press(app, KeyCode::Backspace, KeyModifiers::NONE);
+            assert!(app.command.is_some());
+        }
+    }
+
+    #[test]
+    fn final_backspace_closes_emptied_command_line() {
+        let mut app = app();
+        backspaces_down_to_empty_prompt(&mut app);
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert!(app.command.is_none());
+        assert!(app.complete.is_none());
+    }
+
+    #[test]
+    fn backspace_closes_fresh_empty_command_line() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char(':'), KeyModifiers::NONE);
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE);
+        assert!(app.command.is_none());
+        assert!(app.complete.is_none());
+    }
 }

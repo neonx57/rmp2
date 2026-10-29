@@ -142,6 +142,12 @@ transparency`). Names are lowercase; `!` after a name forces the action
 (`:delete!` skips the confirm dialog). `:help commands` shows the full list in
 the UI, and `:help NAME` describes one command.
 
+While the command line is open, `Tab`/`Down` and `Shift+Tab`/`Up` open and
+cycle a borderless vertical completion popup above it, nvim-style. It completes
+command names (`:rep<Tab>` -> `:repeat `) and enumerated arguments:
+repeat/shuffle/theme/transparency values, `:pane` and `:mini` words, `:help`
+topics, and known tag names for `:tag`. Typing filters the list live.
+
 | Command                                  | Action                                                        |
 | ---------------------------------------- | ------------------------------------------------------------- |
 | `play [n]`                               | Play the selected track, or the n-th queue item                |
